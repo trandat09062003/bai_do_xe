@@ -170,3 +170,4 @@ Nếu kích thước khung thực tế của bạn khác với thông số mặc
 
 * **Gửi xe (Check-in):** Khi xe vào, cảm biến IR phát hiện xe. Người dùng quẹt thẻ RFID lên đầu đọc RC522. ESP32 phát tín hiệu yêu cầu nhận diện biển số. Camera ghi nhận và AI đọc biển số gửi qua Wi-Fi. Bàn nâng hạ X-Z di chuyển khay xe tới ô đỗ còn trống gần nhất, servo đẩy xe vào vị trí và hệ thống lưu trữ trạng thái.
 * **Lấy xe (Check-out):** Người dùng quẹt lại đúng thẻ RFID đã dùng lúc vào. Hệ thống tra cứu vị trí ô đỗ tương ứng, điều khiển bàn nâng đến đúng slot, servo kéo khay xe ra và bàn nâng đưa xe xuống vị trí cổng trả xe. Ô đỗ được giải phóng về trạng thái sẵn sàng đón lượt xe mới.
+
