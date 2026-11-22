@@ -1,0 +1,8 @@
+# Python 3.11.x (Windows 64-bit)
+# Install PyTorch CPU separately first, as described in README_FINAL_VI.txt
+numpy>=1.26
+opencv-python>=4.10
+ultralytics>=8.3
+easyocr>=1.7
+requests>=2.31
+huggingface_hub>=0.26

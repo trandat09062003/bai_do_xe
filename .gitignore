@@ -1,0 +1,41 @@
+# Altium Designer
+baidoxe/History/
+baidoxe/__Previews/
+History/
+__Previews/
+*.PrjPcbStructure
+*.PrjPcb.bak
+*.PcbDoc.bak
+*.SchDoc.bak
+*.Zip
+*.zip
+*.LOG
+*.log
+
+# Temporary media & extractions
+video_frames/
+*.mp4
+*.avi
+baidoxe/firmware/plate_history/
+plate_history/
+
+# Python & Deep Learning
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.cache/
+weights/
+
+# Arduino & Compiler artifacts
+*.o
+*.bin
+*.hex
+*.elf
+*.d
+build/
+.arduino/
