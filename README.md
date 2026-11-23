@@ -62,6 +62,16 @@ Bảng phân bổ chân chuẩn theo file thiết kế mạch in Altium (`baidox
 | | `SCL` | **GPIO 22** | Giao tiếp I2C Clock |
 | **Cảnh báo & Đèn** | `BUZZER` | **GPIO 4** | Kích mức 0 (Active LOW) |
 | | `LED_STATUS` | **GPIO 2** | Đèn báo trạng thái hoạt động |
+| **Nút bấm trên mạch (Tactile)** | `B3` | **GPIO 16** | Nút test / giả lập công tắc hành trình Home X |
+| | `B1` | **GPIO 32** | Nút test / giả lập công tắc hành trình Min Z |
+| | `B4` | **GPIO 33** | Nút test / giả lập công tắc hành trình Max Z |
+
+> [!NOTE]
+> **Vai trò của các nút bấm B1, B3, B4 trên bo mạch Altium:**
+> - Trên bo mạch được thiết kế sẵn 3 nút nhấn tactile SMD (B1, B3, B4) kèm tụ dập dội (104) và điện trở kéo.
+> - **Khi test mạch (Bench Test):** Có thể nhấn trực tiếp 3 nút này để giả lập trạng thái chạm công tắc hành trình mà không cần gắn khung cơ khí.
+> - **Khi lắp mô hình hoàn chỉnh:** Có thể hàn song song 2 dây của công tắc hành trình cơ khí (Microswitch gắn ngoài ray) vào chân của các nút bấm này trên mạch.
+> - **Các nút trên board ESP32:** Nút `EN` dùng để Reset/khởi động lại vi điều khiển; nút `BOOT` dùng để kích hoạt chế độ nạp Firmware khi cần.
 
 ---
 
