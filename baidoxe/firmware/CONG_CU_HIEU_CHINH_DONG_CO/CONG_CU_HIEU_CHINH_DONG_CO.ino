@@ -1,6 +1,6 @@
 /*
  * ==============================================================================================
- * CONG CU HIEU CHINH TOA DO DONG CO BUOC THONG MINH QUA BAN PHIM & LUU FLASH NVS
+ * CONG CU HIEU CHINH TOA DO DONG CO BUOC THONG MINH QUA BAN PHIM & LUU FLASH NVS (6 O DO)
  * ==============================================================================================
  * Bo mach: Altium Bai_Do_Xe_Thong_Minh_ESP32
  * Huong dan:
@@ -16,15 +16,8 @@
  *    - Phim 't' : Kiem tra nhanh trang thai 3 cong tac hanh trinh (X_HOME, Z_MIN, Z_MAX)
  *
  * 3. Khi ban nang da dung ngay ngan truoc o do, bam phim de LUU TOA DO TRUC TIEP VAO FLASH NVS:
- *    - Bam '1' : Luu vi tri hien tai vao O 1 (Tang 1, Cot 1)
- *    - Bam '2' : Luu vi tri hien tai vao O 2 (Tang 1, Cot 2)
- *    - Bam '3' : Luu vi tri hien tai vao O 3 (Tang 2, Cot 1)
- *    - Bam '4' : Luu vi tri hien tai vao O 4 (Tang 2, Cot 2)
- *    - Bam 'p' : In toan bo bang toa do hien tai de kiem tra!
- *
- * GHI CHU QUAN TRONG VE SERVO:
- * - Servo MG90S la loai quay 180 do tieu chuan, KHONG PHAI 315 DO!
- * - Co cau gat khay chi can quay 10 do (thu ve) va 95 do (day ra).
+ *    - Bam '1'..'6' : Luu vi tri hien tai vao O 1..6
+ *    - Bam 'p'      : In toan bo bang toa do hien tai de kiem tra!
  * ==============================================================================================
  */
 
@@ -51,8 +44,9 @@ Preferences prefs;
 long currentX = 0;
 long currentZ = 0;
 
-long slotX[4] = {2000, 6000, 2000, 6000};
-long slotZ[4] = {1500, 1500, 5500, 5500};
+#define TOTAL_SLOTS 6
+long slotX[TOTAL_SLOTS] = {2000, 6000, 2000, 6000, 2000, 6000};
+long slotZ[TOTAL_SLOTS] = {1500, 1500, 4500, 4500, 7500, 7500};
 
 void stepPulse(int stepPin, int delayUs = 500) {
   digitalWrite(stepPin, HIGH);
@@ -63,18 +57,18 @@ void stepPulse(int stepPin, int delayUs = 500) {
 
 void loadFromNVS() {
   prefs.begin("baidoxe", false);
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < TOTAL_SLOTS; i++) {
     String kX = "sx" + String(i);
     String kZ = "sz" + String(i);
     slotX[i] = prefs.getLong(kX.c_str(), slotX[i]);
     slotZ[i] = prefs.getLong(kZ.c_str(), slotZ[i]);
   }
   prefs.end();
-  Serial.println("[NVS] Da doc toa do tu bo nho Flash ESP32!");
+  Serial.println("[NVS] Da doc toa do 6 o do tu bo nho Flash ESP32!");
 }
 
 void saveToNVS(int idx, long x, long z) {
-  if (idx < 0 || idx >= 4) return;
+  if (idx < 0 || idx >= TOTAL_SLOTS) return;
   slotX[idx] = x;
   slotZ[idx] = z;
   prefs.begin("baidoxe", false);
@@ -84,7 +78,6 @@ void saveToNVS(int idx, long x, long z) {
   prefs.putLong(kZ.c_str(), z);
   prefs.end();
   Serial.printf("\n>>> [DA GHI VAO FLASH] O %d: X = %ld, Z = %ld <<<\n", idx + 1, x, z);
-  // Bip 2 tieng
   digitalWrite(PIN_BUZZER, LOW); delay(50); digitalWrite(PIN_BUZZER, HIGH); delay(50);
   digitalWrite(PIN_BUZZER, LOW); delay(50); digitalWrite(PIN_BUZZER, HIGH);
 }
@@ -134,7 +127,7 @@ void goHome() {
 
   // 1. Z ha xuong
   digitalWrite(PIN_DIR_Z, LOW);
-  int tZ = 12000;
+  int tZ = 15000;
   while (digitalRead(PIN_LIMIT_Z_MIN) == HIGH && tZ-- > 0) {
     stepPulse(PIN_STEP_Z, 600);
   }
@@ -151,7 +144,7 @@ void goHome() {
 
   // 2. X sang trai
   digitalWrite(PIN_DIR_X, LOW);
-  int tX = 12000;
+  int tX = 15000;
   while (digitalRead(PIN_LIMIT_X_HOME) == HIGH && tX-- > 0) {
     stepPulse(PIN_STEP_X, 500);
   }
@@ -171,7 +164,7 @@ void goHome() {
 
 void printMenu() {
   Serial.println("\n=======================================================");
-  Serial.println("     BANG DIEU KHIEN HIEU CHINH TOA DO BAI DO XE       ");
+  Serial.println("   BANG DIEU KHIEN HIEU CHINH TOA DO HE THONG 6 O DO   ");
   Serial.println("=======================================================");
   Serial.println(" [w] / [s] : Truc Z Len / Xuong (+/- 200 buoc)");
   Serial.println(" [W] / [S] : Truc Z Len / Xuong nhanh (+/- 1000 buoc)");
@@ -181,8 +174,8 @@ void printMenu() {
   Serial.println(" [e] / [r] : Test Servo Day khay (95 do) / Thu ve (10 do)");
   Serial.println(" [t]       : Kiem tra trang thai 3 cong tac hanh trinh");
   Serial.println("-------------------------------------------------------");
-  Serial.println(" [1], [2], [3], [4] : LUU TRUC TIEP TOA DO VAO FLASH NVS");
-  Serial.println(" [p]       : IN BANG TOA DO 4 O DO");
+  Serial.println(" [1]..[6]  : LUU TRUC TIEP TOA DO VAO FLASH NVS O 1..6");
+  Serial.println(" [p]       : IN BANG TOA DO 6 O DO");
   Serial.println("=======================================================");
   Serial.printf("Toa do hien tai: X = %ld | Z = %ld\n\n", currentX, currentZ);
 }
@@ -249,15 +242,14 @@ void loop() {
           digitalRead(PIN_LIMIT_Z_MAX) == LOW ? "CHAM (LOW)" : "HO (HIGH)");
         break;
 
-      case '1': saveToNVS(0, currentX, currentZ); break;
-      case '2': saveToNVS(1, currentX, currentZ); break;
-      case '3': saveToNVS(2, currentX, currentZ); break;
-      case '4': saveToNVS(3, currentX, currentZ); break;
+      case '1': case '2': case '3': case '4': case '5': case '6':
+        saveToNVS(c - '1', currentX, currentZ);
+        break;
 
       case 'p':
         Serial.println("\n=======================================================");
-        Serial.println(">>> BANG TOA DO HIEN TAI TRONG FLASH NVS: <<<");
-        for (int i = 0; i < 4; i++) {
+        Serial.println(">>> BANG TOA DO 6 O DO TRONG FLASH NVS: <<<");
+        for (int i = 0; i < TOTAL_SLOTS; i++) {
           Serial.printf("  O %d: X = %ld, Z = %ld\n", i + 1, slotX[i], slotZ[i]);
         }
         Serial.println("=======================================================\n");
