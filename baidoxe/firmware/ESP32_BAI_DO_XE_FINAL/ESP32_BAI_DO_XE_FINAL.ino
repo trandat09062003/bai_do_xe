@@ -3,11 +3,12 @@
  * Project   : HE THONG BAI DO XE THONG MINH ESP32 (6 O DO / 3 TANG x 2 COT)
  * Bo mach   : Altium PCB Bai_Do_Xe_Thong_Minh_ESP32 (ESP32 DevKit V1 30-Pin)
  * Dong co   : 2 x Stepper NEMA 17 qua Driver A4988 (Trục X ngang, Trục Z nâng tầng)
- * Co cau    : Servo MG90S keo/day khay xe (pallet) - 180 do tieu chuan (Thu 10 do, Day 95 do)
- * Dinh vi   : 3 Cong tac hanh trinh (Home X, Min Z, Max Z) - Toa do tuyet doi tham chieu tu Home
- * Luu tru   : Preferences Flash NVS (Luu vinh vien toa do 6 o do, khong mat khi mat dien)
+ * Co cau    : Servo 360 do (quay lien tuc) keo/day thanh rang - banh rang
+ * Dinh vi   : 2 Cong tac hanh trinh Home X (GPIO 16) & Min Z (GPIO 32) = Diem lay/tra xe (0,0)
+ *             + 1 Cong tac bao ve dinh Max Z (GPIO 33)
+ * Luu tru   : Preferences Flash NVS (Luu vinh vien toa do 6 o do & thoi gian quay Servo 360)
  * Ngoai vi  : RFID RC522, LCD I2C 1602/2004, Cam bien IR cong vao (GPIO 35), Buzzer, LED
- * Giao tiep : Web Dashboard Responsive + REST API (/api/status, /api/plate, /api/jog, /api/save_slot)
+ * Giao tiep : Web Dashboard Responsive + REST API (/api/status, /api/plate, /api/jog, ...)
  * ==============================================================================================
  */
 
@@ -22,57 +23,38 @@
 #include <Preferences.h>
 
 // --------------------------- 1. CAU HINH CHAN GPIO (CHUAN ALTIUM PCB) -------------------------
-// Khoi Dong co buoc Truc X (Nguyên ly U3 - Driver A4988)
-#define PIN_STEP_X        14  // Chân 11 ESP32
-#define PIN_DIR_X         12  // Chân 12 ESP32
-#define PIN_LIMIT_X_HOME  16  // Chân 21 ESP32 (RX2) - Cong tac hanh trinh Home X (Goc 0 truc X)
+#define PIN_STEP_X        14  // Chân 11 ESP32 - Step Truc X
+#define PIN_DIR_X         12  // Chân 12 ESP32 - Dir Truc X
+#define PIN_LIMIT_X_HOME  16  // Chân 21 ESP32 - Cong tac hanh trinh Home X (Diem lay xe X=0)
 
-// Khoi Dong co buoc Truc Z - Nang ha (Nguyên ly U2 - Driver A4988)
-#define PIN_STEP_Z        25  // Chân 8 ESP32
-#define PIN_DIR_Z         26  // Chân 9 ESP32
-#define PIN_LIMIT_Z_MIN   32  // Chân 6 ESP32 - Cong tac hanh trinh day Z (Goc 0 truc Z)
-#define PIN_LIMIT_Z_MAX   33  // Chân 7 ESP32 - Cong tac hanh trinh dinh Z (Gioi han an toan tren)
+#define PIN_STEP_Z        25  // Chân 8 ESP32  - Step Truc Z
+#define PIN_DIR_Z         26  // Chân 9 ESP32  - Dir Truc Z
+#define PIN_LIMIT_Z_MIN   32  // Chân 6 ESP32  - Cong tac hanh trinh Min Z (Diem lay xe Z=0)
+#define PIN_LIMIT_Z_MAX   33  // Chân 7 ESP32  - Cong tac hanh trinh Max Z (Bao ve dinh)
 
-// Chan Enable chung cho ca 2 Driver A4988 (LOW = Bat dong co, HIGH = Tha dong co)
-#define PIN_MOTORS_EN     27  // Chân 10 ESP32
-
-// Co cau tay gat / trượt khay xe: Servo MG90S
-#define PIN_SERVO_PWM     13  // Chân 13 ESP32
-
-// Cam bien hong ngoai cong vao (IR Gate LM393) - Chốt chân 5 (GPIO 35 Input-Only)
-#define PIN_IR_GATE       35  // Chân 5 ESP32
-
-// Den bao & Coi chip
-#define PIN_LED_STATUS    2   // Chân 19 ESP32
-#define PIN_BUZZER        4   // Chân 20 ESP32 (Active LOW: LOW = On, HIGH = Off)
+#define PIN_MOTORS_EN     27  // Chân 10 ESP32 - Enable Driver A4988 (LOW = Bat)
+#define PIN_SERVO_PWM     13  // Chân 13 ESP32 - Tin hieu Servo 360 do
+#define PIN_IR_GATE       35  // Chân 5 ESP32  - Cam bien hong ngoai cong vao
+#define PIN_LED_STATUS    2   // Chân 19 ESP32 - LED trang thai
+#define PIN_BUZZER        4   // Chân 20 ESP32 - Coi (Active LOW)
 
 #define BUZZER_ACTIVE_LOW true
-
-void buzzerOn() {
-  digitalWrite(PIN_BUZZER, BUZZER_ACTIVE_LOW ? LOW : HIGH);
-}
-
-void buzzerOff() {
-  digitalWrite(PIN_BUZZER, BUZZER_ACTIVE_LOW ? HIGH : LOW);
-}
-
+void buzzerOn()  { digitalWrite(PIN_BUZZER, BUZZER_ACTIVE_LOW ? LOW : HIGH); }
+void buzzerOff() { digitalWrite(PIN_BUZZER, BUZZER_ACTIVE_LOW ? HIGH : LOW); }
 void beep(int count = 1, int durationMs = 80) {
   for (int i = 0; i < count; i++) {
-    buzzerOn();
-    delay(durationMs);
-    buzzerOff();
+    buzzerOn(); delay(durationMs); buzzerOff();
     if (i < count - 1) delay(80);
   }
 }
 
-// RFID RC522 (Giao tiep SPI phan cung)
-#define PIN_RFID_SS       5   // Chân 23 ESP32
-#define PIN_RFID_RST      17  // Chân 22 ESP32 (TX2)
-#define PIN_RFID_SCK      18  // Chân 24 ESP32
-#define PIN_RFID_MISO     19  // Chân 25 ESP32
-#define PIN_RFID_MOSI     23  // Chân 30 ESP32
+// RFID RC522 (SPI)
+#define PIN_RFID_SS       5
+#define PIN_RFID_RST      17
+#define PIN_RFID_SCK      18
+#define PIN_RFID_MISO     19
+#define PIN_RFID_MOSI     23
 
-// Ngoai vi
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 MFRC522 rfid(PIN_RFID_SS, PIN_RFID_RST);
 Servo trayServo;
@@ -80,24 +62,23 @@ WebServer server(80);
 Preferences prefs;
 
 // --------------------------- 2. CAU HINH WI-FI ------------------------------------------------
-const char* WIFI_SSID     = "VIETSET_TECH";      // WiFi của bạn
-const char* WIFI_PASS     = "vs68686868";        // Mật khẩu WiFi
-const char* AP_SSID       = "BaiDoXe_ESP32";     // Phát WiFi Access Point nếu WiFi chính mất
+const char* WIFI_SSID     = "VIETSET_TECH";
+const char* WIFI_PASS     = "vs68686868";
+const char* AP_SSID       = "BaiDoXe_ESP32";
 const char* AP_PASS       = "12345678";
 
-// --------------------------- 3. TOA DO VA CAU HINH HE THONG 6 O DO XE ------------------------
-#define TOTAL_SLOTS 6  // He thong 6 o do xe (3 tang x 2 cot)
+// --------------------------- 3. TOA DO 6 O DO & CAU HINH SERVO 360 DO -------------------------
+#define TOTAL_SLOTS 6
 
 struct SlotInfo {
   bool occupied;
   String uid;
   String plate;
   String parkTime;
-  long stepX;                  // Toa do X tinh tu cong tac hanh trinh (so buoc)
-  long stepZ;                  // Toa do Z tinh tu cong tac hanh trinh (so buoc)
+  long stepX; // So xung truc X tinh tu cong tac hanh trinh Home (0,0)
+  long stepZ; // So xung truc Z tinh tu cong tac hanh trinh Home (0,0)
 };
 
-// Toa do mac dinh ban dau (se duoc ghi de boi gia tri luu trong Preferences Flash neu co)
 SlotInfo slots[TOTAL_SLOTS] = {
   {false, "", "", "",  2000,  1500}, // Slot 1: Tang 1, Cot 1
   {false, "", "", "",  6000,  1500}, // Slot 2: Tang 1, Cot 2
@@ -107,33 +88,37 @@ SlotInfo slots[TOTAL_SLOTS] = {
   {false, "", "", "",  6000,  7500}  // Slot 6: Tang 3, Cot 2
 };
 
-// Toa do thuc te hien tai cua ban nang (so buoc tinh tu Home cong tac hanh trinh)
 long currentX = 0;
 long currentZ = 0;
 bool isHomed  = false;
 
-// Goc quay Servo MG90S (180 do tieu chuan, KHONG PHAI 315 DO!)
-const int SERVO_RETRACT = 10;  // Thu tay gat ve (10 do)
-const int SERVO_EXTEND  = 95;  // Day khay ra / keo khay ve (95 do)
+// --- CAU HINH SERVO 360 DO (QUAY LIEN TUC) ---
+// Neu chieu quay bi nguoc (bam Day lai thanh Rut), chi can dao 2 so 30 va 150 cho nhau!
+#define SERVO_PWM_STOP     90   // Dung im
+#define SERVO_PWM_EXTEND   30   // Quay thuan: Tho thanh rang ra (do khay / day vao o)
+#define SERVO_PWM_RETRACT  150  // Quay nguoc: Rut thanh rang ve
 
-// Bien quan ly trang thai voi Camera ANPR AI
+long servoExtendMs  = 800; // Thoi gian quay de tho ra het co (ms) - Luu trong Flash NVS
+long servoRetractMs = 800; // Thoi gian quay de rut ve het co (ms)  - Luu trong Flash NVS
+
 bool waitingForPlate = false;
 int pendingSlot = -1;
 String pendingUID = "";
 int sessionId = 100;
 
-// --------------------------- 4. DOC/GHI TOA DO VAO BO NHO FLASH (NVS) -------------------------
-void loadSlotCoordinatesFromNVS() {
+// --------------------------- 4. DOC/GHI FLASH NVS (TOA DO + SERVO 360) ------------------------
+void loadConfigFromNVS() {
   prefs.begin("baidoxe", false);
   for (int i = 0; i < TOTAL_SLOTS; i++) {
     String keyX = "sx" + String(i);
     String keyZ = "sz" + String(i);
-    long defX = slots[i].stepX;
-    long defZ = slots[i].stepZ;
-    slots[i].stepX = prefs.getLong(keyX.c_str(), defX);
-    slots[i].stepZ = prefs.getLong(keyZ.c_str(), defZ);
-    Serial.printf("[NVS] Slot %d -> Toa do Flash: X = %ld, Z = %ld\n", i + 1, slots[i].stepX, slots[i].stepZ);
+    slots[i].stepX = prefs.getLong(keyX.c_str(), slots[i].stepX);
+    slots[i].stepZ = prefs.getLong(keyZ.c_str(), slots[i].stepZ);
+    Serial.printf("[NVS] Slot %d -> X = %ld, Z = %ld\n", i + 1, slots[i].stepX, slots[i].stepZ);
   }
+  servoExtendMs  = prefs.getLong("srvExt", 800);
+  servoRetractMs = prefs.getLong("srvRet", 800);
+  Serial.printf("[NVS] Servo 360 -> Extend = %ld ms | Retract = %ld ms\n", servoExtendMs, servoRetractMs);
   prefs.end();
 }
 
@@ -141,19 +126,47 @@ void saveSlotCoordinateToNVS(int slotIdx, long x, long z) {
   if (slotIdx < 0 || slotIdx >= TOTAL_SLOTS) return;
   slots[slotIdx].stepX = x;
   slots[slotIdx].stepZ = z;
-
   prefs.begin("baidoxe", false);
-  String keyX = "sx" + String(slotIdx);
-  String keyZ = "sz" + String(slotIdx);
-  prefs.putLong(keyX.c_str(), x);
-  prefs.putLong(keyZ.c_str(), z);
+  prefs.putLong(("sx" + String(slotIdx)).c_str(), x);
+  prefs.putLong(("sz" + String(slotIdx)).c_str(), z);
   prefs.end();
-
-  Serial.printf("[NVS-SAVE] Da luu Slot %d vao Flash: X = %ld, Z = %ld\n", slotIdx + 1, x, z);
+  Serial.printf("[NVS-SAVE] Slot %d: X = %ld, Z = %ld\n", slotIdx + 1, x, z);
   beep(2, 60);
 }
 
-// --------------------------- 5. DIEU KHIEN DONG CO BUOC & CONG TAC HANH TRINH ------------------
+void saveServoTimingToNVS(long extMs, long retMs) {
+  servoExtendMs  = constrain(extMs, 100, 5000);
+  servoRetractMs = constrain(retMs, 100, 5000);
+  prefs.begin("baidoxe", false);
+  prefs.putLong("srvExt", servoExtendMs);
+  prefs.putLong("srvRet", servoRetractMs);
+  prefs.end();
+  Serial.printf("[NVS-SAVE] Servo 360: Extend = %ld ms, Retract = %ld ms\n", servoExtendMs, servoRetractMs);
+  beep(1, 60);
+}
+
+// --------------------------- 5. DIEU KHIEN SERVO 360 DO ---------------------------------------
+void servoStop() {
+  trayServo.write(SERVO_PWM_STOP);
+}
+
+void servoRunTime(int pwmVal, long durationMs) {
+  trayServo.write(pwmVal);
+  delay(durationMs);
+  servoStop();
+}
+
+void servoExtend() {
+  Serial.printf("[SERVO 360] Quay tho ra trong %ld ms...\n", servoExtendMs);
+  servoRunTime(SERVO_PWM_EXTEND, servoExtendMs);
+}
+
+void servoRetract() {
+  Serial.printf("[SERVO 360] Quay rut ve trong %ld ms...\n", servoRetractMs);
+  servoRunTime(SERVO_PWM_RETRACT, servoRetractMs);
+}
+
+// --------------------------- 6. DIEU KHIEN STEPPER & CONG TAC HANH TRINH ----------------------
 void stepPulse(int stepPin, int delayUs = 450) {
   digitalWrite(stepPin, HIGH);
   delayMicroseconds(delayUs);
@@ -161,389 +174,330 @@ void stepPulse(int stepPin, int delayUs = 450) {
   delayMicroseconds(delayUs);
 }
 
-// Kiem tra trang thai cong tac hanh trinh (Active LOW voi INPUT_PULLUP)
 bool isLimitXHomeHit() { return digitalRead(PIN_LIMIT_X_HOME) == LOW; }
 bool isLimitZMinHit()  { return digitalRead(PIN_LIMIT_Z_MIN) == LOW; }
 bool isLimitZMaxHit()  { return digitalRead(PIN_LIMIT_Z_MAX) == LOW; }
 
-// Ham chay ve goc Home bang 2 cong tac hanh trinh (Z_MIN va X_HOME)
+// Ve diem lay xe (0,0) bang 2 cong tac hanh trinh X_HOME va Z_MIN
 void homeAxes() {
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("DANG VE HOME...");
   lcd.setCursor(0, 1); lcd.print("Cho cong tac HT");
-  Serial.println("\n>>> [HOMING] BAT DAU VE GOC CHUAN BANG CONG TAC HANH TRINH <<<");
+  Serial.println("\n>>> [HOMING] VE DIEM LAY XE (X=0, Z=0) BANG CONG TAC HANH TRINH <<<");
 
-  digitalWrite(PIN_MOTORS_EN, LOW); // Bat nguon dong co
+  digitalWrite(PIN_MOTORS_EN, LOW);
+  servoStop();
 
-  // 1. Thu tay gat Servo ve an toan
-  trayServo.write(SERVO_RETRACT);
-  delay(250);
-
-  // 2. VE HOME TRUC Z (Ha xuong cham LIMIT_Z_MIN)
-  Serial.println("[HOMING Z] Ha truc Z ve LIMIT_Z_MIN...");
-  digitalWrite(PIN_DIR_Z, LOW); // LOW = chieu ha xuong
+  // 1. Ha Z cham LIMIT_Z_MIN
+  digitalWrite(PIN_DIR_Z, LOW);
   int timeoutZ = 15000;
-  while (!isLimitZMinHit() && timeoutZ-- > 0) {
-    stepPulse(PIN_STEP_Z, 600);
-  }
-
-  // Lui nhe len 150 buoc roi cham cham lai de tang do chinh xac
+  while (!isLimitZMinHit() && timeoutZ-- > 0) stepPulse(PIN_STEP_Z, 600);
   digitalWrite(PIN_DIR_Z, HIGH);
   for (int i = 0; i < 150; i++) stepPulse(PIN_STEP_Z, 600);
   delay(50);
   digitalWrite(PIN_DIR_Z, LOW);
   timeoutZ = 600;
-  while (!isLimitZMinHit() && timeoutZ-- > 0) {
-    stepPulse(PIN_STEP_Z, 900); // Buoc cham
-  }
+  while (!isLimitZMinHit() && timeoutZ-- > 0) stepPulse(PIN_STEP_Z, 900);
   currentZ = 0;
-  Serial.println("[HOMING Z OK] Z = 0 (Da cham cong tac LIMIT_Z_MIN)");
+  Serial.println("[HOMING Z OK] Z = 0 (Da cham LIMIT_Z_MIN)");
 
-  // 3. VE HOME TRUC X (Chay sang trai cham LIMIT_X_HOME)
-  Serial.println("[HOMING X] Chay truc X sang trai ve LIMIT_X_HOME...");
-  digitalWrite(PIN_DIR_X, LOW); // LOW = sang trai
+  // 2. Keo X cham LIMIT_X_HOME
+  digitalWrite(PIN_DIR_X, LOW);
   int timeoutX = 15000;
-  while (!isLimitXHomeHit() && timeoutX-- > 0) {
-    stepPulse(PIN_STEP_X, 500);
-  }
-
-  // Lui nhe sang phai 150 buoc roi cham cham lai
+  while (!isLimitXHomeHit() && timeoutX-- > 0) stepPulse(PIN_STEP_X, 500);
   digitalWrite(PIN_DIR_X, HIGH);
   for (int i = 0; i < 150; i++) stepPulse(PIN_STEP_X, 500);
   delay(50);
   digitalWrite(PIN_DIR_X, LOW);
   timeoutX = 600;
-  while (!isLimitXHomeHit() && timeoutX-- > 0) {
-    stepPulse(PIN_STEP_X, 800); // Buoc cham
-  }
+  while (!isLimitXHomeHit() && timeoutX-- > 0) stepPulse(PIN_STEP_X, 800);
   currentX = 0;
-  Serial.println("[HOMING X OK] X = 0 (Da cham cong tac LIMIT_X_HOME)");
+  Serial.println("[HOMING X OK] X = 0 (Da cham LIMIT_X_HOME)");
 
   isHomed = true;
   lcd.clear();
-  lcd.setCursor(0, 0); lcd.print("HOME THANH CONG!");
-  lcd.setCursor(0, 1); lcd.print("X:0 | Z:0 San sang");
-  Serial.println("[HOMING HOAN TAT] Toa do may da thiet lap: X = 0, Z = 0\n");
+  lcd.setCursor(0, 0); lcd.print("HOME OK (0, 0)");
+  lcd.setCursor(0, 1); lcd.print("San sang don xe");
   beep(2, 80);
 }
 
-// Di chuyen truc X tuong doi voi bao ve an toan cong tac hanh trinh
 void jogX(long steps) {
   if (steps == 0) return;
   digitalWrite(PIN_MOTORS_EN, LOW);
-  bool dir = (steps > 0); // true = sang phai, false = sang trai
+  bool dir = (steps > 0);
   digitalWrite(PIN_DIR_X, dir ? HIGH : LOW);
   long count = abs(steps);
-
   for (long i = 0; i < count; i++) {
     if (!dir && isLimitXHomeHit()) {
       currentX = 0;
-      Serial.println("\n[CANH BAO] Cham cong tac LIMIT_X_HOME! Dat currentX = 0");
+      Serial.println("\n[CANH BAO] Cham LIMIT_X_HOME! Dat X = 0");
       beep(1, 150);
       return;
     }
     stepPulse(PIN_STEP_X, 450);
     currentX += (dir ? 1 : -1);
   }
-  Serial.printf("[JOG X] Toa do hien tai -> X = %ld | Z = %ld\n", currentX, currentZ);
+  Serial.printf("[JOG X] X = %ld | Z = %ld\n", currentX, currentZ);
 }
 
-// Di chuyen truc Z tuong doi voi bao ve an toan cong tac hanh trinh
 void jogZ(long steps) {
   if (steps == 0) return;
   digitalWrite(PIN_MOTORS_EN, LOW);
-  bool dir = (steps > 0); // true = di len, false = ha xuong
+  bool dir = (steps > 0);
   digitalWrite(PIN_DIR_Z, dir ? HIGH : LOW);
   long count = abs(steps);
-
   for (long i = 0; i < count; i++) {
     if (!dir && isLimitZMinHit()) {
       currentZ = 0;
-      Serial.println("\n[CANH BAO] Cham cong tac LIMIT_Z_MIN! Dat currentZ = 0");
+      Serial.println("\n[CANH BAO] Cham LIMIT_Z_MIN! Dat Z = 0");
       beep(1, 150);
       return;
     }
     if (dir && isLimitZMaxHit()) {
-      Serial.println("\n[CANH BAO NGUY HIEM] Cham cong tac LIMIT_Z_MAX (Dinh hanh trinh)! Dung!");
+      Serial.println("\n[NGUY HIEM] Cham LIMIT_Z_MAX (Dinh)! Dung!");
       beep(3, 100);
       return;
     }
     stepPulse(PIN_STEP_Z, 550);
     currentZ += (dir ? 1 : -1);
   }
-  Serial.printf("[JOG Z] Toa do hien tai -> X = %ld | Z = %ld\n", currentX, currentZ);
+  Serial.printf("[JOG Z] X = %ld | Z = %ld\n", currentX, currentZ);
 }
 
-// Di chuyen den TOA DO TUYET DOI (targetX, targetZ) tinh tu goc Cong tac hanh trinh
 void moveToAbsolute(long targetX, long targetZ) {
-  if (!isHomed) {
-    Serial.println("[CHU Y] May chua ve Home! Tu dong ve Home truoc...");
-    homeAxes();
-  }
-
+  if (!isHomed) homeAxes();
   digitalWrite(PIN_MOTORS_EN, LOW);
-  Serial.printf("[MOVE] Di chuyen tu (X=%ld, Z=%ld) -> (X=%ld, Z=%ld)\n", currentX, currentZ, targetX, targetZ);
-
-  // 1. Chay truc Z
-  long deltaZ = targetZ - currentZ;
-  jogZ(deltaZ);
+  Serial.printf("[MOVE] (%ld, %ld) -> (%ld, %ld)\n", currentX, currentZ, targetX, targetZ);
+  jogZ(targetZ - currentZ);
   delay(150);
-
-  // 2. Chay truc X
-  long deltaX = targetX - currentX;
-  jogX(deltaX);
+  jogX(targetX - currentX);
   delay(150);
 }
 
-// --------------------------- 6. THAO TAC CAT / LAY XE QUA SERVO & TOA DO -----------------------
+// --------------------------- 7. CHU TRINH GUI XE & LAY XE -------------------------------------
 void storeCarToSlot(int slotIdx) {
   if (slotIdx < 0 || slotIdx >= TOTAL_SLOTS) return;
-
   long targetX = slots[slotIdx].stepX;
   long targetZ = slots[slotIdx].stepZ;
 
   lcd.clear();
-  lcd.setCursor(0, 0); lcd.print("Dua xe -> Slot "); lcd.print(slotIdx + 1);
+  lcd.setCursor(0, 0); lcd.print("Gui xe -> O "); lcd.print(slotIdx + 1);
   lcd.setCursor(0, 1); lcd.print("X:" + String(targetX) + " Z:" + String(targetZ));
 
-  // 1. Di chuyen ban nang den dung vi tri o do
+  // 1. Phat xung tu diem lay xe (0,0) den dung toa do O
   moveToAbsolute(targetX, targetZ);
   delay(300);
 
-  // 2. Servo day khay xe vao o do (Goc 95 do)
-  lcd.setCursor(0, 1); lcd.print("Day khay xe vao ");
-  trayServo.write(SERVO_EXTEND);
-  delay(900);
+  // 2. Servo 360 quay tho thanh rang dua khay xe vao o
+  lcd.setCursor(0, 1); lcd.print("Day khay vao o  ");
+  servoExtend();
+  delay(400);
 
-  // 3. Servo thu tay gat ve (Goc 10 do)
-  trayServo.write(SERVO_RETRACT);
-  delay(600);
+  // 3. Servo 360 quay nguoc rut thanh rang ra khoi khay
+  lcd.setCursor(0, 1); lcd.print("Rut thanh rang  ");
+  servoRetract();
+  delay(300);
 
-  // 4. Tro ve vi tri Home don xe tiep theo
-  lcd.setCursor(0, 1); lcd.print("Ve cong don xe  ");
+  // 4. Quay ve diem lay xe (0,0)
+  lcd.setCursor(0, 1); lcd.print("Ve diem lay xe  ");
   moveToAbsolute(0, 0);
 
   slots[slotIdx].occupied = true;
   beep(1, 200);
-
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("DA CAT XE XONG!");
-  lcd.setCursor(0, 1); lcd.print("Slot " + String(slotIdx + 1) + " san sang");
+  lcd.setCursor(0, 1); lcd.print("O " + String(slotIdx + 1) + " da co xe");
 }
 
 void retrieveCarFromSlot(int slotIdx) {
   if (slotIdx < 0 || slotIdx >= TOTAL_SLOTS) return;
-
   long targetX = slots[slotIdx].stepX;
   long targetZ = slots[slotIdx].stepZ;
 
   lcd.clear();
-  lcd.setCursor(0, 0); lcd.print("Lay xe -> Slot "); lcd.print(slotIdx + 1);
+  lcd.setCursor(0, 0); lcd.print("Lay xe -> O "); lcd.print(slotIdx + 1);
   lcd.setCursor(0, 1); lcd.print("X:" + String(targetX) + " Z:" + String(targetZ));
 
-  // 1. Di chuyen den o do xe can lay
+  // 1. Di chuyen den dung toa do O can lay
   moveToAbsolute(targetX, targetZ);
   delay(300);
 
-  // 2. Keo khay xe ra ban nang
-  lcd.setCursor(0, 1); lcd.print("Keo khay xe ra  ");
-  trayServo.write(SERVO_EXTEND);
-  delay(900);
-  trayServo.write(SERVO_RETRACT);
-  delay(600);
+  // 2. Servo 360 tho thanh rang vao do khay xe
+  lcd.setCursor(0, 1); lcd.print("Do lay khay xe  ");
+  servoExtend();
+  delay(400);
 
-  // 3. Mang xe xuong cong tra xe (Tang tret / Home)
-  lcd.setCursor(0, 1); lcd.print("Mang ve cong tra");
+  // 3. Servo 360 rut khay xe ra khoi o
+  lcd.setCursor(0, 1); lcd.print("Keo khay xe ra  ");
+  servoRetract();
+  delay(300);
+
+  // 4. Mang xe ve diem tra xe (0,0)
+  lcd.setCursor(0, 1); lcd.print("Ve diem tra xe  ");
   moveToAbsolute(0, 0);
 
-  // Giai phong o do
   slots[slotIdx].occupied = false;
   slots[slotIdx].uid = "";
   slots[slotIdx].plate = "";
   beep(2, 100);
-
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("MOI NHAN LAI XE!");
   lcd.setCursor(0, 1); lcd.print("Cam on quy khach");
 }
 
-// --------------------------- 7. GIAO DIEN WEB DASHBOARD & REST API ---------------------------
+// --------------------------- 8. WEB DASHBOARD & REST API --------------------------------------
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bãi Đỗ Xe Thông Minh ESP32 (6 Ô Đỗ)</title>
+  <title>Bãi Đỗ Xe Thông Minh ESP32 (6 Ô)</title>
   <style>
-    :root {
-      --bg: #0f172a; --panel: #1e293b; --card: #334155; --text: #f8fafc;
-      --accent: #38bdf8; --success: #22c55e; --danger: #ef4444; --warning: #f59e0b;
-    }
+    :root { --bg: #0f172a; --panel: #1e293b; --card: #334155; --text: #f8fafc; --accent: #38bdf8; --success: #22c55e; --danger: #ef4444; --warning: #f59e0b; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); padding: 16px; }
-    .container { max-width: 950px; margin: auto; }
-    header { text-align: center; margin-bottom: 20px; }
-    h1 { font-size: 1.6rem; color: var(--accent); margin-bottom: 6px; }
-    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; background: var(--card); }
-    .grid-2 { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; margin-bottom: 16px; }
+    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 14px; }
+    .container { max-width: 960px; margin: auto; }
+    header { text-align: center; margin-bottom: 16px; }
+    h1 { font-size: 1.5rem; color: var(--accent); margin-bottom: 4px; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.78rem; background: var(--card); }
+    .grid-2 { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 14px; margin-bottom: 14px; }
     @media(max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
-    .card { background: var(--panel); padding: 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); }
-    .card h2 { font-size: 1.1rem; color: var(--accent); margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; }
-    .slots-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .slot-box { background: var(--card); padding: 10px; border-radius: 8px; text-align: center; border-left: 4px solid var(--success); transition: all 0.2s; }
+    .card { background: var(--panel); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 14px; }
+    .card h2 { font-size: 1.05rem; color: var(--accent); margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
+    .slots-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .slot-box { background: var(--card); padding: 9px; border-radius: 8px; text-align: center; border-left: 4px solid var(--success); }
     .slot-box.occupied { border-left-color: var(--danger); background: #451a1a; }
-    .slot-title { font-weight: bold; font-size: 0.95rem; }
-    .slot-plate { font-size: 1.05rem; color: #fde047; font-weight: bold; margin: 3px 0; }
-    .slot-coord { font-size: 0.72rem; color: #94a3b8; }
-    .status-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.9rem; }
-    .sw-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+    .slot-title { font-weight: bold; font-size: 0.9rem; }
+    .slot-plate { font-size: 1rem; color: #fde047; font-weight: bold; margin: 2px 0; }
+    .slot-coord { font-size: 0.7rem; color: #94a3b8; }
+    .status-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.88rem; }
+    .sw-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
     .sw-active { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
     .sw-idle { background: #64748b; }
-    .btn-group { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
-    button { background: var(--card); color: var(--text); border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 0.85rem; }
+    .btn-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 8px; }
+    @media(max-width: 550px) { .btn-group { grid-template-columns: repeat(2, 1fr); } }
+    button { background: var(--card); color: var(--text); border: none; padding: 9px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.82rem; }
     button:hover { background: var(--accent); color: #000; }
-    button.btn-primary { background: #0284c7; }
-    button.btn-success { background: #16a34a; }
-    button.btn-danger { background: #dc2626; }
+    .btn-primary { background: #0284c7; }
+    .btn-success { background: #16a34a; }
+    .btn-danger  { background: #dc2626; }
+    .btn-warn    { background: #d97706; }
     .save-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
-    @media(max-width: 600px) { .save-grid { grid-template-columns: repeat(2, 1fr); } }
+    .srv-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+    input[type=number] { background: #0f172a; color: #fff; border: 1px solid #475569; padding: 7px; border-radius: 5px; width: 90px; text-align: center; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <h1>BÃI ĐỖ XE THÔNG MINH ESP32</h1>
-      <p class="badge">Hệ Thống 6 Ô Đỗ &bull; 3 Tầng x 2 Cột &bull; RFID &bull; Camera AI ANPR</p>
+      <p class="badge">6 Ô Đỗ &bull; Công Tắc Hành Trình &bull; Servo 360° &bull; Lưu Flash NVS</p>
     </header>
 
     <div class="grid-2">
-      <!-- SO DO 6 O DO XE -->
       <div class="card">
         <h2>Trạng Thái 6 Ô Đỗ (3 Tầng x 2 Cột)</h2>
-        <div class="slots-grid" id="slotsView">Đang tải dữ liệu...</div>
+        <div class="slots-grid" id="slotsView">Đang tải...</div>
       </div>
 
-      <!-- TOA DO & CONG TAC HANH TRINH -->
       <div class="card">
-        <h2>Công Tắc Hành Trình & Tọa Độ Máy</h2>
-        <div class="status-row">
-          <span>Tọa độ hiện tại:</span>
-          <strong id="curCoord" style="color:var(--accent);">X = 0 | Z = 0</strong>
-        </div>
-        <div class="status-row">
-          <span>Công tắc Home X (GPIO 16):</span>
-          <span id="swX"><span class="sw-dot sw-idle"></span>Hở</span>
-        </div>
-        <div class="status-row">
-          <span>Công tắc Min Z (GPIO 32):</span>
-          <span id="swZMin"><span class="sw-dot sw-idle"></span>Hở</span>
-        </div>
-        <div class="status-row">
-          <span>Công tắc Max Z (GPIO 33):</span>
-          <span id="swZMax"><span class="sw-dot sw-idle"></span>Hở</span>
-        </div>
-        <div class="status-row">
-          <span>Trạng thái Homing:</span>
-          <strong id="homeStatus" style="color:var(--warning);">Chưa Home</strong>
-        </div>
-
-        <button class="btn-primary" style="width:100%; margin-top:12px;" onclick="fetch('/api/home')">
-          &#x21bb; Chạy Về Home (Xác Lập Gốc 0, 0)
-        </button>
+        <h2>Công Tắc Hành Trình (Điểm Lấy Xe 0,0)</h2>
+        <div class="status-row"><span>Tọa độ hiện tại:</span><strong id="curCoord" style="color:var(--accent);">X=0 | Z=0</strong></div>
+        <div class="status-row"><span>CTHT Home X (GPIO 16):</span><span id="swX"><span class="sw-dot sw-idle"></span>Hở</span></div>
+        <div class="status-row"><span>CTHT Min Z (GPIO 32):</span><span id="swZMin"><span class="sw-dot sw-idle"></span>Hở</span></div>
+        <div class="status-row"><span>CTHT Max Z (GPIO 33):</span><span id="swZMax"><span class="sw-dot sw-idle"></span>Hở</span></div>
+        <div class="status-row"><span>Homing:</span><strong id="homeStatus" style="color:var(--warning);">Chưa Home</strong></div>
+        <button class="btn-primary" style="width:100%; margin-top:10px;" onclick="fetch('/api/home')">&#x21bb; Về Điểm Lấy Xe (0, 0)</button>
       </div>
     </div>
 
-    <!-- BANG DIEU KHIEN CAN CHINH TOA DO -->
     <div class="card">
-      <h2>Công Cụ Lái & Lưu Tọa Độ 6 Ô Đỗ Vào Flash NVS</h2>
-      <p style="font-size:0.85rem; color:#94a3b8; margin-bottom:8px;">
-        1. Bấm "Chạy Về Home" để xác lập gốc chuẩn 0, 0.<br>
-        2. Dùng các nút bên dưới để lái bàn nâng đến ngay ngắn miệng từng ô đỗ 1 đến 6.<br>
-        3. Nhấn nút "LƯU VÀO Ô 1..6" để lưu vĩnh viễn tọa độ vào bộ nhớ Flash (tắt nguồn không mất)!
-      </p>
-
+      <h2>1. Hiệu Chỉnh Tọa Độ Xung 6 Ô Đỗ (Tính Từ CTHT)</h2>
       <div class="btn-group">
-        <button onclick="jog('z', 1000)">&#x25b2; Z Lên Nhanh (+1000)</button>
-        <button onclick="jog('z', 200)">&#x25b2; Z Lên (+200)</button>
-        <button class="btn-danger" onclick="fetch('/api/servo?action=test')">Test Servo Đẩy/Thu</button>
-        <button onclick="jog('z', -1000)">&#x25bc; Z Xuống Nhanh (-1000)</button>
-        <button onclick="jog('z', -200)">&#x25bc; Z Xuống (-200)</button>
-        <button onclick="fetch('/api/home')">Về Gốc Home</button>
+        <button onclick="jog('z', 1000)">&#x25b2; Z Lên +1000</button>
+        <button onclick="jog('z', 200)">&#x25b2; Z Lên +200</button>
+        <button onclick="jog('z', -200)">&#x25bc; Z Xuống -200</button>
+        <button onclick="jog('z', -1000)">&#x25bc; Z Xuống -1000</button>
+        <button onclick="jog('x', -1000)">&laquo; X Trái -1000</button>
+        <button onclick="jog('x', -200)">&lsaquo; X Trái -200</button>
+        <button onclick="jog('x', 200)">X Phải &rsaquo; +200</button>
+        <button onclick="jog('x', 1000)">X Phải &raquo; +1000</button>
       </div>
-
-      <div class="btn-group" style="margin-top:8px;">
-        <button onclick="jog('x', -1000)">&laquo; X Trái Nhanh (-1000)</button>
-        <button onclick="jog('x', -200)">&lsaquo; X Trái (-200)</button>
-        <button onclick="jog('x', 200)">X Phải (&rsaquo;) (+200)</button>
-        <button onclick="jog('x', 1000)">X Phải (&raquo;) (+1000)</button>
-      </div>
-
       <div class="save-grid">
-        <button class="btn-success" onclick="saveSlot(1)">LƯU VÀO Ô 1</button>
-        <button class="btn-success" onclick="saveSlot(2)">LƯU VÀO Ô 2</button>
-        <button class="btn-success" onclick="saveSlot(3)">LƯU VÀO Ô 3</button>
-        <button class="btn-success" onclick="saveSlot(4)">LƯU VÀO Ô 4</button>
-        <button class="btn-success" onclick="saveSlot(5)">LƯU VÀO Ô 5</button>
-        <button class="btn-success" onclick="saveSlot(6)">LƯU VÀO Ô 6</button>
+        <button class="btn-success" onclick="saveSlot(1)">LƯU Ô 1</button>
+        <button class="btn-success" onclick="saveSlot(2)">LƯU Ô 2</button>
+        <button class="btn-success" onclick="saveSlot(3)">LƯU Ô 3</button>
+        <button class="btn-success" onclick="saveSlot(4)">LƯU Ô 4</button>
+        <button class="btn-success" onclick="saveSlot(5)">LƯU Ô 5</button>
+        <button class="btn-success" onclick="saveSlot(6)">LƯU Ô 6</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>2. Hiệu Chỉnh Servo 360° (Đỡ Khay & Rút Khay)</h2>
+      <p style="font-size:0.82rem; color:#94a3b8;">Chỉnh thời gian quay (ms) để thanh răng thò ra đỡ được khay và rút ra khỏi khay vừa khít:</p>
+      <div class="srv-row">
+        <label>Thời gian Đẩy Ra (ms):</label>
+        <input type="number" id="extMs" value="800" step="50">
+        <label>Thời gian Rút Về (ms):</label>
+        <input type="number" id="retMs" value="800" step="50">
+        <button class="btn-primary" onclick="saveServo()">Lưu Thời Gian Vào Flash</button>
+      </div>
+      <div class="btn-group">
+        <button class="btn-warn" onclick="fetch('/api/servo?cmd=extend')">Test Đẩy Ra (Full)</button>
+        <button class="btn-warn" onclick="fetch('/api/servo?cmd=retract')">Test Rút Về (Full)</button>
+        <button onclick="fetch('/api/servo?cmd=nudge_ext')">Nhích Ra +100ms</button>
+        <button onclick="fetch('/api/servo?cmd=nudge_ret')">Nhích Về +100ms</button>
       </div>
     </div>
   </div>
 
   <script>
-    function jog(axis, steps) {
-      fetch('/api/jog?axis=' + axis + '&steps=' + steps).then(r => r.json()).then(updateUI);
+    let srvLoaded = false;
+    function jog(axis, steps) { fetch('/api/jog?axis='+axis+'&steps='+steps).then(r=>r.json()).then(updateUI); }
+    function saveSlot(s) { if(confirm('Lưu tọa độ hiện tại vào Ô '+s+'?')) fetch('/api/save_slot?slot='+s).then(r=>r.text()).then(alert); }
+    function saveServo() {
+      let e = document.getElementById('extMs').value, r = document.getElementById('retMs').value;
+      fetch('/api/servo_save?ext='+e+'&ret='+r).then(res=>res.text()).then(alert);
     }
-    function saveSlot(slot) {
-      if(confirm('Bạn có chắc muốn lưu tọa độ hiện tại vào Ô ' + slot + '?')) {
-        fetch('/api/save_slot?slot=' + slot).then(r => r.text()).then(alert);
+    function updateUI(d) {
+      if(!d) return;
+      document.getElementById('curCoord').innerText = 'X = '+d.currentX+' | Z = '+d.currentZ;
+      document.getElementById('homeStatus').innerText = d.isHomed ? 'Đã Home (0,0)' : 'Chưa Home';
+      document.getElementById('homeStatus').style.color = d.isHomed ? 'var(--success)' : 'var(--warning)';
+      if(!srvLoaded && d.servoExtendMs) {
+        document.getElementById('extMs').value = d.servoExtendMs;
+        document.getElementById('retMs').value = d.servoRetractMs;
+        srvLoaded = true;
       }
-    }
-    function updateUI(data) {
-      if(!data) return;
-      document.getElementById('curCoord').innerText = 'X = ' + data.currentX + ' | Z = ' + data.currentZ;
-      document.getElementById('homeStatus').innerText = data.isHomed ? 'Đã Home Chuẩn' : 'Chưa Home';
-      document.getElementById('homeStatus').style.color = data.isHomed ? 'var(--success)' : 'var(--warning)';
-
-      function renderSw(id, active) {
-        document.getElementById(id).innerHTML = active ?
-          '<span class="sw-dot sw-active"></span>ĐANG CHẠM' :
-          '<span class="sw-dot sw-idle"></span>Hở';
-      }
-      renderSw('swX', data.swX);
-      renderSw('swZMin', data.swZMin);
-      renderSw('swZMax', data.swZMax);
-
+      const rSw = (id, a) => document.getElementById(id).innerHTML = a ? '<span class="sw-dot sw-active"></span>ĐANG CHẠM' : '<span class="sw-dot sw-idle"></span>Hở';
+      rSw('swX', d.swX); rSw('swZMin', d.swZMin); rSw('swZMax', d.swZMax);
       let html = '';
-      data.slots.forEach(s => {
-        html += `<div class="slot-box ${s.occupied ? 'occupied' : ''}">
+      d.slots.forEach(s => {
+        html += `<div class="slot-box ${s.occupied?'occupied':''}">
           <div class="slot-title">Ô ĐỖ ${s.slot}</div>
-          <div class="slot-plate">${s.occupied ? (s.plate || 'Có Xe (Thẻ ' + s.uid + ')') : 'TRỐNG'}</div>
-          <div class="slot-coord">Toạ độ: X=${s.stepX} | Z=${s.stepZ}</div>
-        </div>`;
+          <div class="slot-plate">${s.occupied?(s.plate||'Có Xe ('+s.uid+')'):'TRỐNG'}</div>
+          <div class="slot-coord">X=${s.stepX} | Z=${s.stepZ}</div></div>`;
       });
       document.getElementById('slotsView').innerHTML = html;
     }
-
-    setInterval(() => {
-      fetch('/api/status').then(r => r.json()).then(updateUI).catch(()=>{});
-    }, 1000);
+    setInterval(()=>fetch('/api/status').then(r=>r.json()).then(updateUI).catch(()=>{}), 1000);
   </script>
 </body>
 </html>
 )rawliteral";
 
-void handleRoot() {
-  server.send(200, "text/html", INDEX_HTML);
-}
+void handleRoot() { server.send(200, "text/html", INDEX_HTML); }
 
-// REST API cho Camera AI Python & Web Dashboard
 void handleApiStatus() {
   String json = "{";
   json += "\"connected\":true,";
   json += "\"isHomed\":" + String(isHomed ? "true" : "false") + ",";
   json += "\"currentX\":" + String(currentX) + ",";
   json += "\"currentZ\":" + String(currentZ) + ",";
+  json += "\"servoExtendMs\":" + String(servoExtendMs) + ",";
+  json += "\"servoRetractMs\":" + String(servoRetractMs) + ",";
   json += "\"swX\":" + String(isLimitXHomeHit() ? "true" : "false") + ",";
   json += "\"swZMin\":" + String(isLimitZMinHit() ? "true" : "false") + ",";
   json += "\"swZMax\":" + String(isLimitZMaxHit() ? "true" : "false") + ",";
@@ -572,15 +526,11 @@ void handleApiPlate() {
       slots[pendingSlot].plate = plate;
       waitingForPlate = false;
       sessionId++;
-
       lcd.clear();
       lcd.setCursor(0, 0); lcd.print("BIEN SO: " + plate);
-      lcd.setCursor(0, 1); lcd.print("Luu Slot " + String(pendingSlot + 1));
+      lcd.setCursor(0, 1); lcd.print("Luu O " + String(pendingSlot + 1));
       beep(1, 150);
-
-      // Kich hoat dong co dua xe vao slot
       storeCarToSlot(pendingSlot);
-
       server.send(200, "text/plain", "SAVED: " + plate);
       return;
     }
@@ -612,173 +562,136 @@ void handleApiSaveSlot() {
   server.send(400, "text/plain", "INVALID_SLOT");
 }
 
-void handleApiHome() {
-  homeAxes();
-  server.send(200, "text/plain", "HOME_OK");
-}
+void handleApiHome() { homeAxes(); server.send(200, "text/plain", "HOME_OK"); }
 
 void handleApiServo() {
-  Serial.println("[SERVO TEST] Day khay xe (95 do)...");
-  trayServo.write(SERVO_EXTEND);
-  delay(1000);
-  Serial.println("[SERVO TEST] Thu khay xe (10 do)...");
-  trayServo.write(SERVO_RETRACT);
-  server.send(200, "text/plain", "SERVO_TEST_OK");
+  String cmd = server.arg("cmd");
+  if (cmd == "extend")         servoExtend();
+  else if (cmd == "retract")   servoRetract();
+  else if (cmd == "nudge_ext") servoRunTime(SERVO_PWM_EXTEND, 100);
+  else if (cmd == "nudge_ret") servoRunTime(SERVO_PWM_RETRACT, 100);
+  else servoStop();
+  server.send(200, "text/plain", "SERVO_OK");
 }
 
-// --------------------------- 8. GIAO TIEP BAN PHIM SERIAL (CALIBRATION TUC THOI) ---------------
+void handleApiServoSave() {
+  if (server.hasArg("ext") && server.hasArg("ret")) {
+    saveServoTimingToNVS(server.arg("ext").toInt(), server.arg("ret").toInt());
+    server.send(200, "text/plain", "OK: Da luu Servo 360 (Day=" + String(servoExtendMs) + "ms, Rut=" + String(servoRetractMs) + "ms) vao Flash!");
+    return;
+  }
+  server.send(400, "text/plain", "MISSING_PARAMS");
+}
+
+// --------------------------- 9. GIAO TIEP SERIAL MONITOR --------------------------------------
 void printSerialHelp() {
   Serial.println("\n=======================================================================");
-  Serial.println("   CONG CU HIEU CHINH TOA DO BAI DO XE QUA SERIAL & CONG TAC HANH TRINH  ");
+  Serial.println("   HIEU CHINH XUNG 6 O DO & SERVO 360 DO (LUU FLASH NVS VINH VIEN)     ");
   Serial.println("=======================================================================");
-  Serial.println(" [w] / [s] : Truc Z Len / Xuong (+/- 200 buoc)");
-  Serial.println(" [W] / [S] : Truc Z Len / Xuong nhanh (+/- 1000 buoc)");
-  Serial.println(" [d] / [a] : Truc X Phai / Trai (+/- 200 buoc)");
-  Serial.println(" [D] / [A] : Truc X Phai / Trai nhanh (+/- 1000 buoc)");
-  Serial.println(" [h]       : Chay ve GOC HOME bang cong tac hanh trinh (X=0, Z=0)");
-  Serial.println(" [e] / [r] : Test Servo DAY khay (95 do) / THU khay ve (10 do)");
-  Serial.println(" [t]       : Kiem tra trang thai 3 cong tac hanh trinh (Hometest)");
+  Serial.println(" [w]/[s] : Truc Z Len/Xuong (+/-200 xung) | [W]/[S] : (+/-1000 xung)");
+  Serial.println(" [d]/[a] : Truc X Phai/Trai (+/-200 xung) | [D]/[A] : (+/-1000 xung)");
+  Serial.println(" [h]     : Chay ve DIEM LAY XE (0, 0) bang cong tac hanh trinh");
+  Serial.println(" [t]     : Kiem tra trang thai 3 cong tac hanh trinh");
+  Serial.println(" [1]..[6]: Luu so xung hien tai vao O 1..6 (Flash NVS)");
+  Serial.println(" [p]     : In bang toa do 6 o & thong so Servo 360");
   Serial.println("-----------------------------------------------------------------------");
-  Serial.println(" [1], [2], [3], [4], [5], [6] : Luu toa do hien tai vao O 1..6 (FLASH NVS)");
-  Serial.println(" [p]       : In toan bo bang toa do 6 o do");
+  Serial.println(" SERVO 360 DO:");
+  Serial.println(" [e]     : Quay DAY khay ra (" + String(servoExtendMs) + " ms)");
+  Serial.println(" [r]     : Quay RUT thanh rang ve (" + String(servoRetractMs) + " ms)");
+  Serial.println(" [q]/[z] : Nhich thanh rang Ra / Ve (+100 ms) de can khoang cach");
+  Serial.println(" [+]/[-] : Tang / Giam thoi gian Servo (+/- 100 ms) va luu Flash");
   Serial.println("=======================================================================");
-  Serial.printf("-> Toa do hien tai: X = %ld | Z = %ld | Homed = %s\n\n", currentX, currentZ, isHomed ? "YES" : "NO");
+  Serial.printf("-> Hien tai: X=%ld | Z=%ld | Extend=%ldms | Retract=%ldms\n\n", currentX, currentZ, servoExtendMs, servoRetractMs);
 }
 
 void handleSerialCommands() {
   if (Serial.available() > 0) {
     char c = Serial.read();
     if (c == '\r' || c == '\n') return;
-
     switch (c) {
       case 'w': jogZ(200); break;
       case 'W': jogZ(1000); break;
       case 's': jogZ(-200); break;
       case 'S': jogZ(-1000); break;
-
       case 'd': jogX(200); break;
       case 'D': jogX(1000); break;
       case 'a': jogX(-200); break;
       case 'A': jogX(-1000); break;
-
       case 'h': homeAxes(); break;
-
-      case 'e':
-        Serial.println("-> Servo: DAY KHAY XE RA (Goc 95 do)...");
-        trayServo.write(SERVO_EXTEND);
-        break;
-      case 'r':
-        Serial.println("-> Servo: THU KHAY XE VE (Goc 10 do)...");
-        trayServo.write(SERVO_RETRACT);
-        break;
-
+      case 'e': servoExtend(); break;
+      case 'r': servoRetract(); break;
+      case 'q': servoRunTime(SERVO_PWM_EXTEND, 100); break;
+      case 'z': servoRunTime(SERVO_PWM_RETRACT, 100); break;
+      case '+': saveServoTimingToNVS(servoExtendMs + 100, servoRetractMs + 100); break;
+      case '-': saveServoTimingToNVS(servoExtendMs - 100, servoRetractMs - 100); break;
       case 't':
-        Serial.printf("[KIEM TRA SWITCH] LIMIT_X_HOME(16): %s | LIMIT_Z_MIN(32): %s | LIMIT_Z_MAX(33): %s\n",
-          isLimitXHomeHit() ? "CHAM (LOW)" : "HO (HIGH)",
-          isLimitZMinHit() ? "CHAM (LOW)" : "HO (HIGH)",
-          isLimitZMaxHit() ? "CHAM (LOW)" : "HO (HIGH)");
+        Serial.printf("[SWITCH] X_HOME(16): %s | Z_MIN(32): %s | Z_MAX(33): %s\n",
+          isLimitXHomeHit() ? "CHAM" : "HO", isLimitZMinHit() ? "CHAM" : "HO", isLimitZMaxHit() ? "CHAM" : "HO");
         break;
-
-      case '1': case '2': case '3': case '4': case '5': case '6': {
-        int idx = c - '1';
-        saveSlotCoordinateToNVS(idx, currentX, currentZ);
+      case '1': case '2': case '3': case '4': case '5': case '6':
+        saveSlotCoordinateToNVS(c - '1', currentX, currentZ);
         break;
-      }
-
       case 'p':
-        Serial.println("\n>>> BANG TOA DO 6 O DO HIEN TAI (TINH TU CONG TAC HANH TRINH): <<<");
-        for (int i = 0; i < TOTAL_SLOTS; i++) {
-          Serial.printf("  Slot %d: X = %ld | Z = %ld\n", i + 1, slots[i].stepX, slots[i].stepZ);
-        }
-        Serial.println();
+        Serial.println("\n>>> BANG THONG SO HIEN TAI TRONG FLASH NVS: <<<");
+        for (int i = 0; i < TOTAL_SLOTS; i++)
+          Serial.printf("  O %d: X = %ld xung | Z = %ld xung\n", i + 1, slots[i].stepX, slots[i].stepZ);
+        Serial.printf("  Servo 360: Day ra = %ld ms | Rut ve = %ld ms\n\n", servoExtendMs, servoRetractMs);
         break;
-
-      default:
-        printSerialHelp();
-        break;
+      default: printSerialHelp(); break;
     }
   }
 }
 
-// --------------------------- 9. SETUP & LOOP --------------------------------------------------
+// --------------------------- 10. SETUP & LOOP -------------------------------------------------
 void setup() {
   Serial.begin(115200);
   Wire.begin(21, 22);
 
-  // Khoi tao cac chan I/O Dong co
-  pinMode(PIN_STEP_X, OUTPUT);
-  pinMode(PIN_DIR_X, OUTPUT);
-  pinMode(PIN_STEP_Z, OUTPUT);
-  pinMode(PIN_DIR_Z, OUTPUT);
-  pinMode(PIN_MOTORS_EN, OUTPUT);
-  digitalWrite(PIN_MOTORS_EN, LOW); // Bat dong co buoc
+  pinMode(PIN_STEP_X, OUTPUT); pinMode(PIN_DIR_X, OUTPUT);
+  pinMode(PIN_STEP_Z, OUTPUT); pinMode(PIN_DIR_Z, OUTPUT);
+  pinMode(PIN_MOTORS_EN, OUTPUT); digitalWrite(PIN_MOTORS_EN, LOW);
 
-  // Khoi tao Cong tac hanh trinh (INPUT_PULLUP: Chạm = LOW, Hở = HIGH)
   pinMode(PIN_LIMIT_X_HOME, INPUT_PULLUP);
   pinMode(PIN_LIMIT_Z_MIN, INPUT_PULLUP);
   pinMode(PIN_LIMIT_Z_MAX, INPUT_PULLUP);
-
-  // Cam bien cong vao (GPIO 35 la input-only)
   pinMode(PIN_IR_GATE, INPUT);
+  pinMode(PIN_LED_STATUS, OUTPUT); digitalWrite(PIN_LED_STATUS, LOW);
 
-  // LED & Coi
-  pinMode(PIN_LED_STATUS, OUTPUT);
-  digitalWrite(PIN_LED_STATUS, LOW);
-  buzzerOff();
-  pinMode(PIN_BUZZER, OUTPUT);
-  buzzerOff();
+  buzzerOff(); pinMode(PIN_BUZZER, OUTPUT); buzzerOff();
 
-  // Khoi tao Servo MG90S
   trayServo.attach(PIN_SERVO_PWM);
-  trayServo.write(SERVO_RETRACT); // 10 do
+  servoStop();
 
-  // Khoi tao LCD
-  lcd.init();
-  lcd.backlight();
+  lcd.init(); lcd.backlight();
   lcd.setCursor(0, 0); lcd.print("BAI DO XE 6 O");
   lcd.setCursor(0, 1); lcd.print("Dang khoi tao...");
-
-  // Coi bip test khoi dong
   beep(2, 60);
 
-  // Khoi tao RFID RC522
   SPI.begin(PIN_RFID_SCK, PIN_RFID_MISO, PIN_RFID_MOSI, PIN_RFID_SS);
   rfid.PCD_Init();
+  loadConfigFromNVS();
 
-  // Load toa do da luu tu Flash NVS
-  loadSlotCoordinatesFromNVS();
-
-  // Ket noi WiFi
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("Ket noi WiFi...");
   lcd.setCursor(0, 1); lcd.print(WIFI_SSID);
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  WiFi.mode(WIFI_STA); WiFi.begin(WIFI_SSID, WIFI_PASS);
   int retry = 0;
-  while (WiFi.status() != WL_CONNECTED && retry < 16) {
-    delay(500);
-    retry++;
-  }
+  while (WiFi.status() != WL_CONNECTED && retry < 16) { delay(500); retry++; }
 
   if (WiFi.status() == WL_CONNECTED) {
-    lcd.clear();
-    lcd.setCursor(0, 0); lcd.print("WiFi Connected!");
+    lcd.clear(); lcd.setCursor(0, 0); lcd.print("WiFi Connected!");
     lcd.setCursor(0, 1); lcd.print(WiFi.localIP().toString());
-    Serial.printf("\n[WIFI OK] IP: http://%s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("\n[WIFI OK] http://%s\n", WiFi.localIP().toString().c_str());
     MDNS.begin("baidoxe");
     delay(1500);
   } else {
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(AP_SSID, AP_PASS);
-    lcd.clear();
-    lcd.setCursor(0, 0); lcd.print("AP: BaiDoXe_ESP");
+    WiFi.mode(WIFI_AP); WiFi.softAP(AP_SSID, AP_PASS);
+    lcd.clear(); lcd.setCursor(0, 0); lcd.print("AP: BaiDoXe_ESP");
     lcd.setCursor(0, 1); lcd.print(WiFi.softAPIP().toString());
-    Serial.printf("\n[AP MODE] IP: http://%s\n", WiFi.softAPIP().toString().c_str());
+    Serial.printf("\n[AP MODE] http://%s\n", WiFi.softAPIP().toString().c_str());
     delay(1500);
   }
 
-  // Dang ky Routing Web Server
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/status", HTTP_GET, handleApiStatus);
   server.on("/api/plate", HTTP_POST, handleApiPlate);
@@ -786,11 +699,10 @@ void setup() {
   server.on("/api/save_slot", HTTP_GET, handleApiSaveSlot);
   server.on("/api/home", HTTP_GET, handleApiHome);
   server.on("/api/servo", HTTP_GET, handleApiServo);
+  server.on("/api/servo_save", HTTP_GET, handleApiServoSave);
   server.begin();
 
-  // Chay ve Home goc chuan ngay khi khoi dong
   homeAxes();
-
   printSerialHelp();
 }
 
@@ -798,7 +710,6 @@ void loop() {
   server.handleClient();
   handleSerialCommands();
 
-  // Kiem tra the RFID
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
     String scannedUID = "";
     for (byte i = 0; i < rfid.uid.size; i++) {
@@ -806,57 +717,41 @@ void loop() {
       scannedUID += String(rfid.uid.uidByte[i], HEX);
     }
     scannedUID.toUpperCase();
-    rfid.PICC_HaltA();
-    rfid.PCD_StopCrypto1();
-
-    Serial.println("\n[RFID] Phat hien the UID: " + scannedUID);
+    rfid.PICC_HaltA(); rfid.PCD_StopCrypto1();
+    Serial.println("\n[RFID] UID: " + scannedUID);
     beep(1, 100);
 
-    // Kiem tra the da gui xe trong bai chua
     int foundSlot = -1;
     for (int i = 0; i < TOTAL_SLOTS; i++) {
-      if (slots[i].occupied && slots[i].uid == scannedUID) {
-        foundSlot = i;
-        break;
-      }
+      if (slots[i].occupied && slots[i].uid == scannedUID) { foundSlot = i; break; }
     }
 
     if (foundSlot >= 0) {
-      // 1. THE DA GUI XE -> TRA XE
       lcd.clear();
       lcd.setCursor(0, 0); lcd.print("The: " + scannedUID);
-      lcd.setCursor(0, 1); lcd.print("Tra xe Slot " + String(foundSlot + 1));
+      lcd.setCursor(0, 1); lcd.print("Tra xe O " + String(foundSlot + 1));
       retrieveCarFromSlot(foundSlot);
     } else {
-      // 2. THE MOI -> TIM O TRONG
       int emptySlot = -1;
       for (int i = 0; i < TOTAL_SLOTS; i++) {
-        if (!slots[i].occupied) {
-          emptySlot = i;
-          break;
-        }
+        if (!slots[i].occupied) { emptySlot = i; break; }
       }
-
       if (emptySlot == -1) {
         lcd.clear();
         lcd.setCursor(0, 0); lcd.print("BAI XE DA DAY!");
         lcd.setCursor(0, 1); lcd.print("Vui long quay lai");
         beep(3, 150);
       } else {
-        // Cho Camera ANPR chup bien so
         pendingSlot = emptySlot;
         pendingUID = scannedUID;
         slots[emptySlot].uid = scannedUID;
         waitingForPlate = true;
         sessionId++;
-
         lcd.clear();
-        lcd.setCursor(0, 0); lcd.print("Vao Slot " + String(emptySlot + 1));
+        lcd.setCursor(0, 0); lcd.print("Vao O " + String(emptySlot + 1));
         lcd.setCursor(0, 1); lcd.print("Cho quet bien so");
-        Serial.printf("[CHECK-IN] Dang cho camera ANPR chup bien so cho Slot %d...\n", emptySlot + 1);
       }
     }
   }
-
   delay(10);
 }
