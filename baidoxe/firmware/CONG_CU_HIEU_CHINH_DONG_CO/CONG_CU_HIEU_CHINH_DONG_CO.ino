@@ -198,6 +198,11 @@ void setup() {
   pinMode(PIN_BUZZER, OUTPUT);
   digitalWrite(PIN_BUZZER, HIGH); // Tat coi (Active LOW)
 
+  // Test coi 1 tieng khi khoi dong he thong
+  digitalWrite(PIN_BUZZER, LOW);
+  delay(100);
+  digitalWrite(PIN_BUZZER, HIGH);
+
   // Bat Driver
   digitalWrite(PIN_MOTORS_EN, LOW);
 

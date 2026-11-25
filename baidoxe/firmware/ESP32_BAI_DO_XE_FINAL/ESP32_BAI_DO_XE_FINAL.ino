@@ -665,7 +665,7 @@ void setup() {
   lcd.init(); lcd.backlight();
   lcd.setCursor(0, 0); lcd.print("BAI DO XE 6 O");
   lcd.setCursor(0, 1); lcd.print("Dang khoi tao...");
-  beep(2, 60);
+  beep(1, 100); // Test coi 1 tieng khi khoi dong he thong
 
   SPI.begin(PIN_RFID_SCK, PIN_RFID_MISO, PIN_RFID_MOSI, PIN_RFID_SS);
   rfid.PCD_Init();
