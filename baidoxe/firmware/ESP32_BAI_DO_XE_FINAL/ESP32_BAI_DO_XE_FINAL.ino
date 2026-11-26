@@ -38,7 +38,7 @@
 #define PIN_LED_STATUS    2   // Chân 19 ESP32 - LED trang thai
 #define PIN_BUZZER        4   // Chân 20 ESP32 - Coi (Active LOW)
 
-#define BUZZER_ACTIVE_LOW true
+#define BUZZER_ACTIVE_LOW false // SS8050 la transistor NPN: HIGH = Keu, LOW = Tat
 void buzzerOn()  { digitalWrite(PIN_BUZZER, BUZZER_ACTIVE_LOW ? LOW : HIGH); }
 void buzzerOff() { digitalWrite(PIN_BUZZER, BUZZER_ACTIVE_LOW ? HIGH : LOW); }
 void beep(int count = 1, int durationMs = 80) {
