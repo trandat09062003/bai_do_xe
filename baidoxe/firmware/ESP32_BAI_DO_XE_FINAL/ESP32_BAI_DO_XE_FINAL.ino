@@ -92,6 +92,10 @@ long currentX = 0;
 long currentZ = 0;
 bool isHomed  = false;
 
+// --- CAU HINH CHIEU QUAY DONG CO BUOC (DOI true/false NEU BI NGUOC CHIEU) ---
+#define INVERT_DIR_X  false   // false = Ve Home X chay sang Trai | true = Ve Home X chay sang Phai
+#define INVERT_DIR_Z  true    // true = Da dao chieu Z de khi ve Home (0) ban nang ha XUONG DUOI
+
 // --- CAU HINH SERVO 360 DO (QUAY LIEN TUC) ---
 // Neu chieu quay bi nguoc (bam Day lai thanh Rut), chi can dao 2 so 30 va 150 cho nhau!
 #define SERVO_PWM_STOP     90   // Dung im
@@ -178,6 +182,14 @@ bool isLimitXHomeHit() { return digitalRead(PIN_LIMIT_X_HOME) == LOW; }
 bool isLimitZMinHit()  { return digitalRead(PIN_LIMIT_Z_MIN) == LOW; }
 bool isLimitZMaxHit()  { return digitalRead(PIN_LIMIT_Z_MAX) == LOW; }
 
+void setDirX(bool movePositive) {
+  digitalWrite(PIN_DIR_X, (movePositive ^ INVERT_DIR_X) ? HIGH : LOW);
+}
+
+void setDirZ(bool movePositive) {
+  digitalWrite(PIN_DIR_Z, (movePositive ^ INVERT_DIR_Z) ? HIGH : LOW);
+}
+
 // Ve diem lay xe (0,0) bang 2 cong tac hanh trinh X_HOME va Z_MIN
 void homeAxes() {
   lcd.clear();
@@ -189,26 +201,26 @@ void homeAxes() {
   servoStop();
 
   // 1. Ha Z cham LIMIT_Z_MIN
-  digitalWrite(PIN_DIR_Z, LOW);
+  setDirZ(false);
   int timeoutZ = 15000;
   while (!isLimitZMinHit() && timeoutZ-- > 0) stepPulse(PIN_STEP_Z, 600);
-  digitalWrite(PIN_DIR_Z, HIGH);
+  setDirZ(true);
   for (int i = 0; i < 150; i++) stepPulse(PIN_STEP_Z, 600);
   delay(50);
-  digitalWrite(PIN_DIR_Z, LOW);
+  setDirZ(false);
   timeoutZ = 600;
   while (!isLimitZMinHit() && timeoutZ-- > 0) stepPulse(PIN_STEP_Z, 900);
   currentZ = 0;
   Serial.println("[HOMING Z OK] Z = 0 (Da cham LIMIT_Z_MIN)");
 
   // 2. Keo X cham LIMIT_X_HOME
-  digitalWrite(PIN_DIR_X, LOW);
+  setDirX(false);
   int timeoutX = 15000;
   while (!isLimitXHomeHit() && timeoutX-- > 0) stepPulse(PIN_STEP_X, 500);
-  digitalWrite(PIN_DIR_X, HIGH);
+  setDirX(true);
   for (int i = 0; i < 150; i++) stepPulse(PIN_STEP_X, 500);
   delay(50);
-  digitalWrite(PIN_DIR_X, LOW);
+  setDirX(false);
   timeoutX = 600;
   while (!isLimitXHomeHit() && timeoutX-- > 0) stepPulse(PIN_STEP_X, 800);
   currentX = 0;
@@ -218,14 +230,14 @@ void homeAxes() {
   lcd.clear();
   lcd.setCursor(0, 0); lcd.print("HOME OK (0, 0)");
   lcd.setCursor(0, 1); lcd.print("San sang don xe");
-  beep(2, 80);
+  beep(1, 100);
 }
 
 void jogX(long steps) {
   if (steps == 0) return;
   digitalWrite(PIN_MOTORS_EN, LOW);
   bool dir = (steps > 0);
-  digitalWrite(PIN_DIR_X, dir ? HIGH : LOW);
+  setDirX(dir);
   long count = abs(steps);
   for (long i = 0; i < count; i++) {
     if (!dir && isLimitXHomeHit()) {
@@ -244,7 +256,7 @@ void jogZ(long steps) {
   if (steps == 0) return;
   digitalWrite(PIN_MOTORS_EN, LOW);
   bool dir = (steps > 0);
-  digitalWrite(PIN_DIR_Z, dir ? HIGH : LOW);
+  setDirZ(dir);
   long count = abs(steps);
   for (long i = 0; i < count; i++) {
     if (!dir && isLimitZMinHit()) {
