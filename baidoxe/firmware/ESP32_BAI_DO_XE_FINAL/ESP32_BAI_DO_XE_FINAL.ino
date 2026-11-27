@@ -90,7 +90,7 @@ SlotInfo slots[TOTAL_SLOTS] = {
 
 long currentX = 0;
 long currentZ = 0;
-bool isHomed  = false;
+bool isHomed  = true;  // Mac dinh coi vi tri luc bat nguon la (0, 0) de chay ngay khong can cho Homing
 
 // --- CAU HINH CHIEU QUAY DONG CO BUOC (DOI true/false NEU BI NGUOC CHIEU) ---
 #define INVERT_DIR_X  false   // false = Ve Home X chay sang Trai | true = Ve Home X chay sang Phai
@@ -472,12 +472,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <button onclick="jog('z', stepSize)">&#x25b2; Z Lên</button>
           <div></div>
           <button onclick="jog('x', -stepSize)">&#x25c0; X Trái</button>
-          <button class="dpad-home" onclick="goHome()">&#x21bb; HOME<br>(0, 0)</button>
+          <button class="dpad-home" onclick="setZero()">Đặt Đây Là<br>(0, 0)</button>
           <button onclick="jog('x', stepSize)">X Phải &#x25b6;</button>
           <div></div>
           <button onclick="jog('z', -stepSize)">&#x25bc; Z Xuống</button>
           <div></div>
         </div>
+        <button class="btn-primary" style="width:100%; margin-top:10px; padding:8px;" onclick="goHome()">&#x21bb; Tự Chạy Về CTHT Home</button>
 
         <div style="margin-top:12px;">
           <div class="status-row"><span>CTHT Home X (GPIO 16):</span><span id="swX"><span class="sw-dot sw-idle"></span>Hở</span></div>
@@ -521,7 +522,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       el.classList.add('active');
     }
     function jog(axis, steps) { fetch('/api/jog?axis='+axis+'&steps='+steps).then(r=>r.json()).then(updateUI); }
-    function goHome() { showToast('Đang chạy về Home (0,0)...'); fetch('/api/home').then(()=>showToast('Đã về Home (0,0)!')); }
+    function setZero() { fetch('/api/zero').then(r=>r.text()).then(m=>{ showToast(m); fetchStatus(); }); }
+    function goHome() { showToast('Đang chạy về CTHT (0,0)...'); fetch('/api/home').then(()=>showToast('Đã về Home (0,0)!')); }
     function saveSlot(s) { fetch('/api/save_slot?slot='+s).then(r=>r.text()).then(m=>{ showToast(m); fetchStatus(); }); }
     function gotoSlot(s) { showToast('Đang chạy tới Ô '+s+'...'); fetch('/api/goto_slot?slot='+s).then(r=>r.text()).then(m=>showToast(m)); }
     function srv(cmd) { fetch('/api/servo?cmd='+cmd); }
@@ -646,6 +648,13 @@ void handleApiSaveSlot() {
 }
 
 void handleApiHome() { homeAxes(); server.send(200, "text/plain", "HOME_OK"); }
+
+void handleApiZero() {
+  currentX = 0; currentZ = 0; isHomed = true;
+  Serial.println("[ZERO] Da chot vi tri hien tai lam goc X=0, Z=0!");
+  beep(1, 80);
+  server.send(200, "text/plain", "Da chot cho nay lam goc (0, 0)!");
+}
 
 void handleApiGotoSlot() {
   if (server.hasArg("slot")) {
@@ -794,6 +803,7 @@ void setup() {
   server.on("/api/save_slot", HTTP_GET, handleApiSaveSlot);
   server.on("/api/goto_slot", HTTP_GET, handleApiGotoSlot);
   server.on("/api/home", HTTP_GET, handleApiHome);
+  server.on("/api/zero", HTTP_GET, handleApiZero);
   server.on("/api/servo", HTTP_GET, handleApiServo);
   server.on("/api/servo_save", HTTP_GET, handleApiServoSave);
   server.begin();
