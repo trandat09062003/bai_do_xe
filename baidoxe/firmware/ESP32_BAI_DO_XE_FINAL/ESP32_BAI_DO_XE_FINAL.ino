@@ -202,7 +202,7 @@ void homeAxes() {
 
   // 1. Ha Z cham LIMIT_Z_MIN (dong thoi bao ve neu cham nham Z_MAX)
   setDirZ(false);
-  int timeoutZ = 15000;
+  long timeoutZ = 50000;
   bool hitWrongZ = false;
   while (!isLimitZMinHit() && timeoutZ-- > 0) {
     if (isLimitZMaxHit()) {
@@ -227,7 +227,7 @@ void homeAxes() {
 
   // 2. Keo X cham LIMIT_X_HOME
   setDirX(false);
-  int timeoutX = 15000;
+  long timeoutX = 50000;
   while (!isLimitXHomeHit() && timeoutX-- > 0) {
     stepPulse(PIN_STEP_X, 500);
     if (timeoutX % 200 == 0) yield();
