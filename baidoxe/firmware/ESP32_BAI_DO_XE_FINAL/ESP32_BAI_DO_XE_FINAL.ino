@@ -816,6 +816,10 @@ void setup() {
 }
 
 void loop() {
+  // He cham cong tac hanh trinh Home X hoac Min Z (ke ca khi dung im hay day tay) -> Lap tuc reset toa do ve 0!
+  if (isLimitXHomeHit()) currentX = 0;
+  if (isLimitZMinHit())  currentZ = 0;
+
   server.handleClient();
   handleSerialCommands();
 
