@@ -798,7 +798,10 @@ void setup() {
   server.on("/api/servo_save", HTTP_GET, handleApiServoSave);
   server.begin();
 
-  homeAxes();
+  // Khong tu dong chay Home khi moi bat nguon de tranh dam khung khi chua can chinh
+  lcd.clear();
+  lcd.setCursor(0, 0); lcd.print("SAN SANG! BAM");
+  lcd.setCursor(0, 1); lcd.print("HOME TREN WEB");
   printSerialHelp();
 }
 
