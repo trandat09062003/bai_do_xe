@@ -400,114 +400,147 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
   <style>
     :root { --bg: #0f172a; --panel: #1e293b; --card: #334155; --text: #f8fafc; --accent: #38bdf8; --success: #22c55e; --danger: #ef4444; --warning: #f59e0b; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 14px; }
-    .container { max-width: 960px; margin: auto; }
-    header { text-align: center; margin-bottom: 16px; }
-    h1 { font-size: 1.5rem; color: var(--accent); margin-bottom: 4px; }
-    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.78rem; background: var(--card); }
-    .grid-2 { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 14px; margin-bottom: 14px; }
-    @media(max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
-    .card { background: var(--panel); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 14px; }
-    .card h2 { font-size: 1.05rem; color: var(--accent); margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
+    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 12px; }
+    .container { max-width: 980px; margin: auto; }
+    header { text-align: center; margin-bottom: 14px; }
+    h1 { font-size: 1.45rem; color: var(--accent); margin-bottom: 4px; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; background: var(--card); color: #cbd5e1; }
+    .grid-2 { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 12px; margin-bottom: 12px; }
+    @media(max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+    .card { background: var(--panel); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); margin-bottom: 12px; }
+    .card h2 { font-size: 1rem; color: var(--accent); margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
     .slots-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .slot-box { background: var(--card); padding: 9px; border-radius: 8px; text-align: center; border-left: 4px solid var(--success); }
     .slot-box.occupied { border-left-color: var(--danger); background: #451a1a; }
     .slot-title { font-weight: bold; font-size: 0.9rem; }
-    .slot-plate { font-size: 1rem; color: #fde047; font-weight: bold; margin: 2px 0; }
-    .slot-coord { font-size: 0.7rem; color: #94a3b8; }
-    .status-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.88rem; }
+    .slot-plate { font-size: 0.95rem; color: #fde047; font-weight: bold; margin: 2px 0; }
+    .slot-coord { font-size: 0.72rem; color: #94a3b8; margin-bottom: 6px; }
+    .slot-actions { display: flex; gap: 5px; justify-content: center; }
+    .slot-actions button { padding: 5px 8px; font-size: 0.74rem; flex: 1; }
+    .status-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.86rem; }
     .sw-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
     .sw-active { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
     .sw-idle { background: #64748b; }
-    .btn-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 8px; }
-    @media(max-width: 550px) { .btn-group { grid-template-columns: repeat(2, 1fr); } }
-    button { background: var(--card); color: var(--text); border: none; padding: 9px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.82rem; }
-    button:hover { background: var(--accent); color: #000; }
+    button { background: var(--card); color: var(--text); border: none; padding: 9px 10px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.84rem; transition: 0.15s; user-select: none; }
+    button:hover { filter: brightness(1.18); }
+    button:active { transform: scale(0.96); }
     .btn-primary { background: #0284c7; }
     .btn-success { background: #16a34a; }
     .btn-danger  { background: #dc2626; }
     .btn-warn    { background: #d97706; }
-    .save-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+    .step-bar { display: flex; gap: 6px; justify-content: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .step-btn { background: #0f172a; border: 1px solid #475569; padding: 6px 12px; font-size: 0.8rem; }
+    .step-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+    .dpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 340px; margin: auto; }
+    .dpad button { padding: 14px 8px; font-size: 0.95rem; }
+    .dpad-home { background: #0284c7; font-size: 0.85rem !important; }
     .srv-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
-    input[type=number] { background: #0f172a; color: #fff; border: 1px solid #475569; padding: 7px; border-radius: 5px; width: 90px; text-align: center; }
+    input[type=number] { background: #0f172a; color: #fff; border: 1px solid #475569; padding: 7px; border-radius: 5px; width: 85px; text-align: center; }
+    .btn-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 10px; }
+    @media(max-width: 550px) { .btn-4 { grid-template-columns: repeat(2, 1fr); } }
+    #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #16a34a; color: #fff; padding: 10px 18px; border-radius: 8px; font-weight: bold; font-size: 0.88rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 999; }
+    #toast.show { opacity: 1; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <h1>BÃI ĐỖ XE THÔNG MINH ESP32</h1>
-      <p class="badge">6 Ô Đỗ &bull; Công Tắc Hành Trình &bull; Servo 360° &bull; Lưu Flash NVS</p>
+      <p class="badge">Hỗ trợ phím W/A/S/D hoặc Mũi tên trên bàn phím để lái nhanh!</p>
     </header>
 
     <div class="grid-2">
+      <!-- BẢNG 6 Ô ĐỖ + NÚT LƯU & CHẠY THỬ TRỰC TIẾP -->
       <div class="card">
-        <h2>Trạng Thái 6 Ô Đỗ (3 Tầng x 2 Cột)</h2>
+        <h2><span>6 Ô Đỗ (Bấm Lưu ngay tại ô)</span></h2>
         <div class="slots-grid" id="slotsView">Đang tải...</div>
       </div>
 
+      <!-- D-PAD ĐIỀU HƯỚNG + CÔNG TẮC HÀNH TRÌNH -->
       <div class="card">
-        <h2>Công Tắc Hành Trình (Điểm Lấy Xe 0,0)</h2>
-        <div class="status-row"><span>Tọa độ hiện tại:</span><strong id="curCoord" style="color:var(--accent);">X=0 | Z=0</strong></div>
-        <div class="status-row"><span>CTHT Home X (GPIO 16):</span><span id="swX"><span class="sw-dot sw-idle"></span>Hở</span></div>
-        <div class="status-row"><span>CTHT Min Z (GPIO 32):</span><span id="swZMin"><span class="sw-dot sw-idle"></span>Hở</span></div>
-        <div class="status-row"><span>CTHT Max Z (GPIO 33):</span><span id="swZMax"><span class="sw-dot sw-idle"></span>Hở</span></div>
-        <div class="status-row"><span>Homing:</span><strong id="homeStatus" style="color:var(--warning);">Chưa Home</strong></div>
-        <button class="btn-primary" style="width:100%; margin-top:10px;" onclick="fetch('/api/home')">&#x21bb; Về Điểm Lấy Xe (0, 0)</button>
+        <h2><span>Tay Cầm Lái Nhanh (Trục X - Z)</span><strong id="curCoord" style="color:#fde047; font-size:0.9rem;">X=0 | Z=0</strong></h2>
+
+        <div class="step-bar">
+          <button class="step-btn" onclick="setStep(50, this)">Mịn (50)</button>
+          <button class="step-btn active" onclick="setStep(200, this)">Vừa (200)</button>
+          <button class="step-btn" onclick="setStep(1000, this)">Nhanh (1000)</button>
+          <button class="step-btn" onclick="setStep(2000, this)">Xa (2000)</button>
+        </div>
+
+        <div class="dpad">
+          <div></div>
+          <button onclick="jog('z', stepSize)">&#x25b2; Z Lên</button>
+          <div></div>
+          <button onclick="jog('x', -stepSize)">&#x25c0; X Trái</button>
+          <button class="dpad-home" onclick="goHome()">&#x21bb; HOME<br>(0, 0)</button>
+          <button onclick="jog('x', stepSize)">X Phải &#x25b6;</button>
+          <div></div>
+          <button onclick="jog('z', -stepSize)">&#x25bc; Z Xuống</button>
+          <div></div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <div class="status-row"><span>CTHT Home X (GPIO 16):</span><span id="swX"><span class="sw-dot sw-idle"></span>Hở</span></div>
+          <div class="status-row"><span>CTHT Min Z (GPIO 32):</span><span id="swZMin"><span class="sw-dot sw-idle"></span>Hở</span></div>
+          <div class="status-row"><span>CTHT Max Z (GPIO 33):</span><span id="swZMax"><span class="sw-dot sw-idle"></span>Hở</span></div>
+          <div class="status-row"><span>Trạng thái Homing:</span><strong id="homeStatus" style="color:var(--warning);">Chưa Home</strong></div>
+        </div>
       </div>
     </div>
 
     <div class="card">
-      <h2>1. Hiệu Chỉnh Tọa Độ Xung 6 Ô Đỗ (Tính Từ CTHT)</h2>
-      <div class="btn-group">
-        <button onclick="jog('z', 1000)">&#x25b2; Z Lên +1000</button>
-        <button onclick="jog('z', 200)">&#x25b2; Z Lên +200</button>
-        <button onclick="jog('z', -200)">&#x25bc; Z Xuống -200</button>
-        <button onclick="jog('z', -1000)">&#x25bc; Z Xuống -1000</button>
-        <button onclick="jog('x', -1000)">&laquo; X Trái -1000</button>
-        <button onclick="jog('x', -200)">&lsaquo; X Trái -200</button>
-        <button onclick="jog('x', 200)">X Phải &rsaquo; +200</button>
-        <button onclick="jog('x', 1000)">X Phải &raquo; +1000</button>
-      </div>
-      <div class="save-grid">
-        <button class="btn-success" onclick="saveSlot(1)">LƯU Ô 1</button>
-        <button class="btn-success" onclick="saveSlot(2)">LƯU Ô 2</button>
-        <button class="btn-success" onclick="saveSlot(3)">LƯU Ô 3</button>
-        <button class="btn-success" onclick="saveSlot(4)">LƯU Ô 4</button>
-        <button class="btn-success" onclick="saveSlot(5)">LƯU Ô 5</button>
-        <button class="btn-success" onclick="saveSlot(6)">LƯU Ô 6</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>2. Hiệu Chỉnh Servo 360° (Đỡ Khay & Rút Khay)</h2>
-      <p style="font-size:0.82rem; color:#94a3b8;">Chỉnh thời gian quay (ms) để thanh răng thò ra đỡ được khay và rút ra khỏi khay vừa khít:</p>
+      <h2>Hiệu Chỉnh Servo 360° (Đỡ Khay & Rút Khay)</h2>
       <div class="srv-row">
-        <label>Thời gian Đẩy Ra (ms):</label>
-        <input type="number" id="extMs" value="800" step="50">
-        <label>Thời gian Rút Về (ms):</label>
-        <input type="number" id="retMs" value="800" step="50">
-        <button class="btn-primary" onclick="saveServo()">Lưu Thời Gian Vào Flash</button>
+        <label>Đẩy Ra (ms):</label><input type="number" id="extMs" value="800" step="50">
+        <label>Rút Về (ms):</label><input type="number" id="retMs" value="800" step="50">
+        <button class="btn-primary" onclick="saveServo()">Lưu Flash</button>
       </div>
-      <div class="btn-group">
-        <button class="btn-warn" onclick="fetch('/api/servo?cmd=extend')">Test Đẩy Ra (Full)</button>
-        <button class="btn-warn" onclick="fetch('/api/servo?cmd=retract')">Test Rút Về (Full)</button>
-        <button onclick="fetch('/api/servo?cmd=nudge_ext')">Nhích Ra +100ms</button>
-        <button onclick="fetch('/api/servo?cmd=nudge_ret')">Nhích Về +100ms</button>
+      <div class="btn-4">
+        <button class="btn-warn" onclick="srv('extend')">Test Đẩy Ra</button>
+        <button class="btn-warn" onclick="srv('retract')">Test Rút Về</button>
+        <button onclick="srv('nudge_ext')">Nhích Ra +100ms</button>
+        <button onclick="srv('nudge_ret')">Nhích Về +100ms</button>
       </div>
     </div>
   </div>
+  <div id="toast">Đã lưu!</div>
 
   <script>
+    let stepSize = 200;
     let srvLoaded = false;
+    function showToast(msg, err=false) {
+      let t = document.getElementById('toast');
+      t.innerText = msg;
+      t.style.background = err ? '#dc2626' : '#16a34a';
+      t.classList.add('show');
+      setTimeout(()=>t.classList.remove('show'), 2200);
+    }
+    function setStep(val, el) {
+      stepSize = val;
+      document.querySelectorAll('.step-btn').forEach(b=>b.classList.remove('active'));
+      el.classList.add('active');
+    }
     function jog(axis, steps) { fetch('/api/jog?axis='+axis+'&steps='+steps).then(r=>r.json()).then(updateUI); }
-    function saveSlot(s) { if(confirm('Lưu tọa độ hiện tại vào Ô '+s+'?')) fetch('/api/save_slot?slot='+s).then(r=>r.text()).then(alert); }
+    function goHome() { showToast('Đang chạy về Home (0,0)...'); fetch('/api/home').then(()=>showToast('Đã về Home (0,0)!')); }
+    function saveSlot(s) { fetch('/api/save_slot?slot='+s).then(r=>r.text()).then(m=>{ showToast(m); fetchStatus(); }); }
+    function gotoSlot(s) { showToast('Đang chạy tới Ô '+s+'...'); fetch('/api/goto_slot?slot='+s).then(r=>r.text()).then(m=>showToast(m)); }
+    function srv(cmd) { fetch('/api/servo?cmd='+cmd); }
     function saveServo() {
       let e = document.getElementById('extMs').value, r = document.getElementById('retMs').value;
-      fetch('/api/servo_save?ext='+e+'&ret='+r).then(res=>res.text()).then(alert);
+      fetch('/api/servo_save?ext='+e+'&ret='+r).then(res=>res.text()).then(m=>showToast(m));
     }
+    document.addEventListener('keydown', e => {
+      if(e.target.tagName === 'INPUT') return;
+      const k = e.key.toLowerCase();
+      if(k==='w' || e.key==='ArrowUp')    { e.preventDefault(); jog('z', stepSize); }
+      if(k==='s' || e.key==='ArrowDown')  { e.preventDefault(); jog('z', -stepSize); }
+      if(k==='a' || e.key==='ArrowLeft')  { e.preventDefault(); jog('x', -stepSize); }
+      if(k==='d' || e.key==='ArrowRight') { e.preventDefault(); jog('x', stepSize); }
+      if(k==='h') goHome();
+    });
     function updateUI(d) {
       if(!d) return;
-      document.getElementById('curCoord').innerText = 'X = '+d.currentX+' | Z = '+d.currentZ;
+      document.getElementById('curCoord').innerText = 'X='+d.currentX+' | Z='+d.currentZ;
       document.getElementById('homeStatus').innerText = d.isHomed ? 'Đã Home (0,0)' : 'Chưa Home';
       document.getElementById('homeStatus').style.color = d.isHomed ? 'var(--success)' : 'var(--warning)';
       if(!srvLoaded && d.servoExtendMs) {
@@ -522,11 +555,17 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         html += `<div class="slot-box ${s.occupied?'occupied':''}">
           <div class="slot-title">Ô ĐỖ ${s.slot}</div>
           <div class="slot-plate">${s.occupied?(s.plate||'Có Xe ('+s.uid+')'):'TRỐNG'}</div>
-          <div class="slot-coord">X=${s.stepX} | Z=${s.stepZ}</div></div>`;
+          <div class="slot-coord">X=${s.stepX} | Z=${s.stepZ}</div>
+          <div class="slot-actions">
+            <button class="btn-success" onclick="saveSlot(${s.slot})">Lưu Ô ${s.slot}</button>
+            <button class="btn-primary" onclick="gotoSlot(${s.slot})">Chạy thử</button>
+          </div></div>`;
       });
       document.getElementById('slotsView').innerHTML = html;
     }
-    setInterval(()=>fetch('/api/status').then(r=>r.json()).then(updateUI).catch(()=>{}), 1000);
+    function fetchStatus() { fetch('/api/status').then(r=>r.json()).then(updateUI).catch(()=>{}); }
+    setInterval(fetchStatus, 1000);
+    fetchStatus();
   </script>
 </body>
 </html>
@@ -607,6 +646,18 @@ void handleApiSaveSlot() {
 }
 
 void handleApiHome() { homeAxes(); server.send(200, "text/plain", "HOME_OK"); }
+
+void handleApiGotoSlot() {
+  if (server.hasArg("slot")) {
+    int s = server.arg("slot").toInt() - 1;
+    if (s >= 0 && s < TOTAL_SLOTS) {
+      moveToAbsolute(slots[s].stepX, slots[s].stepZ);
+      server.send(200, "text/plain", "Da chay toi O " + String(s + 1));
+      return;
+    }
+  }
+  server.send(400, "text/plain", "INVALID_SLOT");
+}
 
 void handleApiServo() {
   String cmd = server.arg("cmd");
@@ -741,6 +792,7 @@ void setup() {
   server.on("/api/plate", HTTP_POST, handleApiPlate);
   server.on("/api/jog", HTTP_GET, handleApiJog);
   server.on("/api/save_slot", HTTP_GET, handleApiSaveSlot);
+  server.on("/api/goto_slot", HTTP_GET, handleApiGotoSlot);
   server.on("/api/home", HTTP_GET, handleApiHome);
   server.on("/api/servo", HTTP_GET, handleApiServo);
   server.on("/api/servo_save", HTTP_GET, handleApiServoSave);
