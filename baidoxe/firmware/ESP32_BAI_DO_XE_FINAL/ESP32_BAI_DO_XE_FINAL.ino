@@ -200,31 +200,48 @@ void homeAxes() {
   digitalWrite(PIN_MOTORS_EN, LOW);
   servoStop();
 
-  // 1. Ha Z cham LIMIT_Z_MIN
+  // 1. Ha Z cham LIMIT_Z_MIN (dong thoi bao ve neu cham nham Z_MAX)
   setDirZ(false);
   int timeoutZ = 15000;
-  while (!isLimitZMinHit() && timeoutZ-- > 0) stepPulse(PIN_STEP_Z, 600);
-  setDirZ(true);
-  for (int i = 0; i < 150; i++) stepPulse(PIN_STEP_Z, 600);
-  delay(50);
-  setDirZ(false);
-  timeoutZ = 600;
-  while (!isLimitZMinHit() && timeoutZ-- > 0) stepPulse(PIN_STEP_Z, 900);
+  bool hitWrongZ = false;
+  while (!isLimitZMinHit() && timeoutZ-- > 0) {
+    if (isLimitZMaxHit()) {
+      hitWrongZ = true;
+      Serial.println("[LOI HOMING Z] Cham nham LIMIT_Z_MAX! Hay kiem tra chieu quay Z hoac day B1/B4!");
+      beep(3, 120);
+      break;
+    }
+    stepPulse(PIN_STEP_Z, 600);
+    if (timeoutZ % 200 == 0) yield();
+  }
+  if (!hitWrongZ && isLimitZMinHit()) {
+    setDirZ(true);
+    for (int i = 0; i < 150; i++) stepPulse(PIN_STEP_Z, 600);
+    delay(50);
+    setDirZ(false);
+    timeoutZ = 600;
+    while (!isLimitZMinHit() && timeoutZ-- > 0) stepPulse(PIN_STEP_Z, 900);
+  }
   currentZ = 0;
-  Serial.println("[HOMING Z OK] Z = 0 (Da cham LIMIT_Z_MIN)");
+  Serial.println("[HOMING Z OK] Z = 0");
 
   // 2. Keo X cham LIMIT_X_HOME
   setDirX(false);
   int timeoutX = 15000;
-  while (!isLimitXHomeHit() && timeoutX-- > 0) stepPulse(PIN_STEP_X, 500);
-  setDirX(true);
-  for (int i = 0; i < 150; i++) stepPulse(PIN_STEP_X, 500);
-  delay(50);
-  setDirX(false);
-  timeoutX = 600;
-  while (!isLimitXHomeHit() && timeoutX-- > 0) stepPulse(PIN_STEP_X, 800);
+  while (!isLimitXHomeHit() && timeoutX-- > 0) {
+    stepPulse(PIN_STEP_X, 500);
+    if (timeoutX % 200 == 0) yield();
+  }
+  if (isLimitXHomeHit()) {
+    setDirX(true);
+    for (int i = 0; i < 150; i++) stepPulse(PIN_STEP_X, 500);
+    delay(50);
+    setDirX(false);
+    timeoutX = 600;
+    while (!isLimitXHomeHit() && timeoutX-- > 0) stepPulse(PIN_STEP_X, 800);
+  }
   currentX = 0;
-  Serial.println("[HOMING X OK] X = 0 (Da cham LIMIT_X_HOME)");
+  Serial.println("[HOMING X OK] X = 0");
 
   isHomed = true;
   lcd.clear();
@@ -239,15 +256,21 @@ void jogX(long steps) {
   bool dir = (steps > 0);
   setDirX(dir);
   long count = abs(steps);
+  // Cho phep thoat ra neu dang de san tren CTHT X khi chay duong (+)
+  bool allowLeaveHome = (dir && isLimitXHomeHit());
+
   for (long i = 0; i < count; i++) {
-    if (!dir && isLimitXHomeHit()) {
+    bool hitX = isLimitXHomeHit();
+    if (!hitX) allowLeaveHome = false;
+    if (hitX && !allowLeaveHome) {
       currentX = 0;
-      Serial.println("\n[CANH BAO] Cham LIMIT_X_HOME! Dat X = 0");
-      beep(1, 150);
+      Serial.println("\n[DUNG KHAN CAP] Cham CTHT HOME X! Dat X = 0");
+      beep(1, 120);
       return;
     }
     stepPulse(PIN_STEP_X, 450);
     currentX += (dir ? 1 : -1);
+    if (i % 200 == 0) yield();
   }
   Serial.printf("[JOG X] X = %ld | Z = %ld\n", currentX, currentZ);
 }
@@ -258,20 +281,29 @@ void jogZ(long steps) {
   bool dir = (steps > 0);
   setDirZ(dir);
   long count = abs(steps);
+  bool allowLeaveMin = (dir && isLimitZMinHit());
+  bool allowLeaveMax = (!dir && isLimitZMaxHit());
+
   for (long i = 0; i < count; i++) {
-    if (!dir && isLimitZMinHit()) {
+    bool hitMin = isLimitZMinHit();
+    bool hitMax = isLimitZMaxHit();
+    if (!hitMin) allowLeaveMin = false;
+    if (!hitMax) allowLeaveMax = false;
+
+    if (hitMin && !allowLeaveMin) {
       currentZ = 0;
-      Serial.println("\n[CANH BAO] Cham LIMIT_Z_MIN! Dat Z = 0");
-      beep(1, 150);
+      Serial.println("\n[DUNG KHAN CAP] Cham CTHT MIN Z! Dat Z = 0");
+      beep(1, 120);
       return;
     }
-    if (dir && isLimitZMaxHit()) {
-      Serial.println("\n[NGUY HIEM] Cham LIMIT_Z_MAX (Dinh)! Dung!");
+    if (hitMax && !allowLeaveMax) {
+      Serial.println("\n[DUNG KHAN CAP] Cham CTHT MAX Z (Dinh)! Dung!");
       beep(3, 100);
       return;
     }
     stepPulse(PIN_STEP_Z, 550);
     currentZ += (dir ? 1 : -1);
+    if (i % 200 == 0) yield();
   }
   Serial.printf("[JOG Z] X = %ld | Z = %ld\n", currentX, currentZ);
 }
