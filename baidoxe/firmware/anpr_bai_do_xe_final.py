@@ -45,7 +45,7 @@ STANDALONE_TEST_MODE = True
 YOLO_CONFIDENCE = 0.25
 YOLO_IMAGE_SIZE = 320
 PROCESS_EVERY_N_FRAMES = 2
-OCR_SEND_THRESHOLD = 0.90                 # Ngưỡng xuất nhận diện (>= 90%)
+OCR_SEND_THRESHOLD = 0.60                 # Nguong xuat nhan dien (>= 60%)
 OCR_VOTE_FLOOR = 0.75
 
 # Tự động sửa lỗi OCR nhận nhầm số 1 đầu biển/seri thành số 7 (72->12, 75->15, 77->17, B7->B1):
@@ -56,7 +56,7 @@ OCR_LOW_TEXT = 0.20
 OCR_LINK_THRESHOLD = 0.25
 
 # --- CẤU HÌNH ĐỘ TRỄ ỔN ĐỊNH (CHỐNG NHẬN DIỆN QUÁ NHANH KHI ĐANG ĐẶT XE) ---
-STABLE_VOTES = 8                          # Bắt buộc trùng khớp 8 lần đọc liên tiếp (~1 giây đứng yên)
+STABLE_VOTES = 3                          # Trung khop 3 lan doc lien tiep la chot gui ngay
 VOTE_WINDOW = 12                          # Cửa sổ lưu trữ phiếu bầu
 
 HTTP_TIMEOUT_SECONDS = 2.5
@@ -860,7 +860,7 @@ def main():
             elif key in (ord("c"), ord("C")):      # Nhấn C để chuyển cổng camera
                 if cap is not None:
                     cap.release()
-                current_cam_idx = 1 if current_cam_idx == 0 else 0
+                current_cam_idx = (current_cam_idx + 1) % 4
                 cap, current_cam_idx = open_webcam(current_cam_idx)
                 votes.clear()
 

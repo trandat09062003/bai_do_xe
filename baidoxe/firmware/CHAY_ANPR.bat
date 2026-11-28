@@ -17,14 +17,7 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
-echo [2/3] Kiem tra va cai dat thu vien neu thieu...
-python -c "import easyocr, ultralytics, cv2, requests" >nul 2>nul
-if %errorlevel% neq 0 (
-    echo    Dang cai dat cac thu vien con thieu (easyocr, ultralytics, opencv, requests)...
-    python -m pip install --upgrade pip
-    python -m pip install -r requirements_anpr.txt
-)
-
+echo [2/3] Bo qua buoc kiem tra thu vien (da cai san)...
 echo [3/3] Dang khoi chay chuong trinh Camera ANPR...
 echo.
 echo * PHIM NONG TRONG CUA SO CAMERA:

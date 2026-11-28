@@ -13,13 +13,14 @@
  */
 
 #include <WiFi.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 #include <ESPmDNS.h>
 #include <WebServer.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <SPI.h>
 #include <MFRC522.h>
-#include <ESP32Servo.h>
 #include <Preferences.h>
 
 // --------------------------- 1. CAU HINH CHAN GPIO (CHUAN ALTIUM PCB) -------------------------
@@ -57,7 +58,6 @@ void beep(int count = 1, int durationMs = 80) {
 
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 MFRC522 rfid(PIN_RFID_SS, PIN_RFID_RST);
-Servo trayServo;
 WebServer server(80);
 Preferences prefs;
 
@@ -77,16 +77,17 @@ struct SlotInfo {
   String parkTime;
   long stepX; // So xung truc X tinh tu goc (0,0)
   long stepZ; // So xung truc Z tinh tu goc (0,0)
+  unsigned long parkMs;
 };
 
 // Toa do chuan da hieu chinh thuc te cho mo hinh 3 tang x 2 cot:
 SlotInfo slots[TOTAL_SLOTS] = {
-  {false, "", "", "",  14000,      0}, // O 1: Tang 1, Cot 1
-  {false, "", "", "",  25400,      0}, // O 2: Tang 1, Cot 2
-  {false, "", "", "",  14000,  10000}, // O 3: Tang 2, Cot 1
-  {false, "", "", "",  25400,  10000}, // O 4: Tang 2, Cot 2
-  {false, "", "", "",  14000,  19000}, // O 5: Tang 3, Cot 1
-  {false, "", "", "",  25400,  19000}  // O 6: Tang 3, Cot 2
+  {false, "", "", "",  14000,      0, 0}, // O 1: Tang 1, Cot 1
+  {false, "", "", "",  25400,      0, 0}, // O 2: Tang 1, Cot 2
+  {false, "", "", "",  12000,  11000, 0}, // O 3: Tang 2, Cot 1
+  {false, "", "", "",  24000,  11000, 0}, // O 4: Tang 2, Cot 2
+  {false, "", "", "",  12000,  21000, 0}, // O 5: Tang 3, Cot 1
+  {false, "", "", "",  24000,  21000, 0}  // O 6: Tang 3, Cot 2
 };
 
 // Lich su vao/ra gan day (luu toi da 20 luot)
@@ -101,6 +102,22 @@ struct HistoryItem {
 HistoryItem historyLog[MAX_HISTORY];
 int historyCount = 0;
 
+// Bang chi phi gui xe
+struct BillingItem {
+  String plate;
+  int floor;
+  int slot;
+  String timeIn;
+  String timeOut;
+  unsigned long durationMin;
+  long unitPrice;
+  long fee;
+};
+BillingItem billingLog[MAX_HISTORY];
+int billingCount = 0;
+long unitPriceVnd = 5000;
+long totalRevenueVnd = 0;
+
 long currentX = 0;
 long currentZ = 0;
 bool isHomed  = true;
@@ -109,13 +126,13 @@ bool isHomed  = true;
 #define INVERT_DIR_X  false   // false = Ve Home X chay sang Trai | true = Chay sang Phai
 #define INVERT_DIR_Z  true    // true = Ha xuong cham MIN Z khi ve Home (0)
 
-// Servo 360 do (quay lien tuc)
-#define SERVO_PWM_STOP     90
-#define SERVO_PWM_EXTEND   30
-#define SERVO_PWM_RETRACT  150
+// Servo 180 do (LEDC 50Hz: 500us = 0 do, 2500us = 180 do)
+#define SERVO_FREQ     50
+#define SERVO_RES      16
 
-long servoExtendMs  = 800;
-long servoRetractMs = 800;
+long servoExtendMs  = 0;   // Goc day ra (0..180 do)
+long servoRetractMs = 180; // Goc rut ve (0..180 do)
+int  currentServoAngle = 180;
 
 // Che do van hanh: true = Tu dong (RFID + Camera ANPR), false = Thu cong / RFID nhanh khong can doi Camera
 bool requireCameraAI = true;
@@ -146,6 +163,25 @@ void addHistory(String action, int slotNum, String uid, String plate) {
   historyLog[0] = {formatUptime(), action, slotNum, uid, plate};
 }
 
+long calcParkingFee(unsigned long durationSec, long pricePerHour) {
+  if (durationSec < 60) return 0;
+  unsigned long hours = (durationSec + 3599) / 3600;
+  return (long)hours * pricePerHour;
+}
+
+void addBilling(String plate, int slotNum, String timeIn, String timeOut, unsigned long durationSec) {
+  if (billingCount < MAX_HISTORY) {
+    for (int i = billingCount; i > 0; i--) billingLog[i] = billingLog[i - 1];
+    billingCount++;
+  } else {
+    for (int i = MAX_HISTORY - 1; i > 0; i--) billingLog[i] = billingLog[i - 1];
+  }
+  int floor = ((slotNum - 1) / 2) + 1;
+  long fee = calcParkingFee(durationSec, unitPriceVnd);
+  totalRevenueVnd += fee;
+  billingLog[0] = {plate, floor, slotNum, timeIn, timeOut, durationSec / 60, unitPriceVnd, fee};
+}
+
 // --------------------------- 4. DOC/GHI FLASH NVS (TOA DO + SERVO 360) ------------------------
 void loadConfigFromNVS() {
   prefs.begin("baidoxe", false);
@@ -153,8 +189,9 @@ void loadConfigFromNVS() {
     slots[i].stepX = prefs.getLong(("sx" + String(i)).c_str(), slots[i].stepX);
     slots[i].stepZ = prefs.getLong(("sz" + String(i)).c_str(), slots[i].stepZ);
   }
-  servoExtendMs  = prefs.getLong("srvExt", 800);
-  servoRetractMs = prefs.getLong("srvRet", 800);
+  servoExtendMs  = constrain(prefs.getLong("srvExt", 0), 0, 180);
+  servoRetractMs = constrain(prefs.getLong("srvRet", 180), 0, 180);
+  unitPriceVnd   = prefs.getLong("price", 5000);
   prefs.end();
 }
 
@@ -169,9 +206,9 @@ void saveSlotCoordinateToNVS(int slotIdx, long x, long z) {
   beep(2, 60);
 }
 
-void saveServoTimingToNVS(long extMs, long retMs) {
-  servoExtendMs  = constrain(extMs, 100, 5000);
-  servoRetractMs = constrain(retMs, 100, 5000);
+void saveServoTimingToNVS(long extAngle, long retAngle) {
+  servoExtendMs  = constrain(extAngle, 0, 180);
+  servoRetractMs = constrain(retAngle, 0, 180);
   prefs.begin("baidoxe", false);
   prefs.putLong("srvExt", servoExtendMs);
   prefs.putLong("srvRet", servoRetractMs);
@@ -179,15 +216,22 @@ void saveServoTimingToNVS(long extMs, long retMs) {
   beep(1, 60);
 }
 
-// --------------------------- 5. DIEU KHIEN SERVO 360 DO ---------------------------------------
-void servoStop() { trayServo.write(SERVO_PWM_STOP); }
-void servoRunTime(int pwmVal, long durationMs) {
-  trayServo.write(pwmVal);
-  delay(durationMs);
-  servoStop();
+// --------------------------- 5. DIEU KHIEN SERVO 180 DO (LEDC 50Hz) --------------------------
+void writeServoAngle(int angle) {
+  angle = constrain(angle, 0, 180);
+  currentServoAngle = angle;
+  long us = map(angle, 0, 180, 500, 2500);
+  uint32_t duty = (uint32_t)((us * 65535UL) / 20000UL);
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWrite(PIN_SERVO_PWM, duty);
+#else
+  ledcWrite(4, duty);
+#endif
 }
-void servoExtend()  { servoRunTime(SERVO_PWM_EXTEND, servoExtendMs); }
-void servoRetract() { servoRunTime(SERVO_PWM_RETRACT, servoRetractMs); }
+
+void servoStop()    { }
+void servoExtend()  { writeServoAngle((int)servoExtendMs);  delay(1000); }
+void servoRetract() { writeServoAngle((int)servoRetractMs); delay(1000); }
 
 // --------------------------- 6. DIEU KHIEN STEPPER & CONG TAC HANH TRINH ----------------------
 void stepPulse(int stepPin, int delayUs = 450) {
@@ -345,13 +389,17 @@ void storeCarToSlot(int slotIdx) {
 
   slots[slotIdx].occupied = true;
   slots[slotIdx].parkTime = formatUptime();
+  slots[slotIdx].parkMs = millis();
   addHistory("VAO", slotIdx + 1, slots[slotIdx].uid, slots[slotIdx].plate);
 
-  systemStatusText = "Da cat xe vao Vi tri " + String(slotIdx + 1);
+  waitingForPlate = false;
+  pendingSlot = -1;
+  rfid.PCD_Init(); // Reset lai module RFID chong treo SPI do nhieu dong co
+  systemStatusText = "San sang! Quet the RFID de gui/lay xe";
   beep(1, 180);
   lcd.clear();
-  lcd.setCursor(0, 0); lcd.print("DA CAT XE XONG!");
-  lcd.setCursor(0, 1); lcd.print("O " + String(slotIdx + 1) + " da co xe");
+  lcd.setCursor(0, 0); lcd.print("SAN SANG! QUET");
+  lcd.setCursor(0, 1); lcd.print("THE RFID DE GUI");
 }
 
 void retrieveCarFromSlot(int slotIdx) {
@@ -361,6 +409,8 @@ void retrieveCarFromSlot(int slotIdx) {
 
   String oldUid = slots[slotIdx].uid;
   String oldPlate = slots[slotIdx].plate;
+  String oldParkTime = slots[slotIdx].parkTime;
+  unsigned long oldParkMs = slots[slotIdx].parkMs;
 
   systemStatusText = "Dang lay xe tu Vi tri " + String(slotIdx + 1) + "...";
   lcd.clear();
@@ -381,17 +431,24 @@ void retrieveCarFromSlot(int slotIdx) {
   lcd.setCursor(0, 1); lcd.print("Ve diem tra xe  ");
   moveToAbsolute(0, 0);
 
+  String timeOutStr = formatUptime();
+  unsigned long durSec = (oldParkMs > 0) ? ((millis() - oldParkMs) / 1000) : 0;
+  addBilling(oldPlate.length() ? oldPlate : oldUid, slotIdx + 1, oldParkTime, timeOutStr, durSec);
   addHistory("RA", slotIdx + 1, oldUid, oldPlate);
   slots[slotIdx].occupied = false;
   slots[slotIdx].uid = "";
   slots[slotIdx].plate = "";
   slots[slotIdx].parkTime = "";
+  slots[slotIdx].parkMs = 0;
 
-  systemStatusText = "Da tra xe tu Vi tri " + String(slotIdx + 1);
+  waitingForPlate = false;
+  pendingSlot = -1;
+  rfid.PCD_Init(); // Reset lai module RFID chong treo SPI do nhieu dong co
+  systemStatusText = "San sang! Quet the RFID de gui/lay xe";
   beep(2, 100);
   lcd.clear();
-  lcd.setCursor(0, 0); lcd.print("MOI NHAN LAI XE!");
-  lcd.setCursor(0, 1); lcd.print("Cam on quy khach");
+  lcd.setCursor(0, 0); lcd.print("SAN SANG! QUET");
+  lcd.setCursor(0, 1); lcd.print("THE RFID DE GUI");
 }
 
 // --------------------------- 8. GIAO DIEN WEB QUAN LY CHUYEN NGHIEP ----------------------------
@@ -576,17 +633,19 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <div class="status-line"><span>CTHT Min Z (SW3 - GPIO 32):</span><span id="swZMin"><span class="dot"></span>Hở</span></div>
             <div class="status-line"><span>CTHT Max Z (SW2 - GPIO 33):</span><span id="swZMax"><span class="dot"></span>Hở</span></div>
 
-            <div style="margin-top:14px; font-weight:700; font-size:0.88rem;">Hiệu chỉnh thời gian Servo 360° (ms):</div>
+            <div style="margin-top:14px; font-weight:700; font-size:0.88rem;">Hiệu chỉnh góc Servo 180° (Hiện tại: <span id="srvCurAng" style="color:var(--blue)">0°</span>):</div>
             <div style="display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap;">
-              <label style="font-size:0.82rem;">Đẩy:</label><input type="number" id="extMs" value="800" step="50" style="width:75px;">
-              <label style="font-size:0.82rem;">Rút:</label><input type="number" id="retMs" value="800" step="50" style="width:75px;">
+              <label style="font-size:0.82rem;">Đẩy (°):</label><input type="number" id="extMs" value="0" min="0" max="180" step="5" style="width:72px;">
+              <label style="font-size:0.82rem;">Rút (°):</label><input type="number" id="retMs" value="180" min="0" max="180" step="5" style="width:72px;">
               <button class="btn-blue" onclick="saveServo()">Lưu Flash</button>
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;">
-              <button class="btn-amber" onclick="srv('extend')">Test Đẩy Ra</button>
-              <button class="btn-amber" onclick="srv('retract')">Test Rút Về</button>
-              <button onclick="srv('nudge_ext')">Nhích Ra +100ms</button>
-              <button onclick="srv('nudge_ret')">Nhích Về +100ms</button>
+              <button onclick="srv('nudge_ret')">◀ Nhích -10°</button>
+              <button onclick="srv('nudge_ext')">Nhích +10° ▶</button>
+              <button class="btn-green" onclick="setServoPos('ret')">Chốt Vị Trí Rút (Ban đầu)</button>
+              <button class="btn-green" onclick="setServoPos('ext')">Chốt Vị Trí Đẩy (Nhét xe)</button>
+              <button class="btn-amber" onclick="srvTest('retract')">Test Rút Về</button>
+              <button class="btn-amber" onclick="srvTest('extend')">Test Đẩy Ra</button>
             </div>
           </div>
         </div>
@@ -616,11 +675,54 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
       </div>
 
-      <!-- TAB 5: LỊCH SỬ -->
+      <!-- TAB 5: LỊCH SỬ & CHI PHÍ -->
       <div id="tab-history" class="tab-pane">
-        <div class="page-title">Lịch sử xe vào / ra</div>
-        <div class="page-sub">Nhật ký hoạt động gần nhất của hệ thống bãi đỗ xe.</div>
+        <div class="page-title">Bảng chi phí gửi xe &amp; Lịch sử</div>
+        <div class="page-sub">Quản lý đơn giá, doanh thu và nhật ký xe vào/ra.</div>
+
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:10px;color:var(--navy)">Bảng chi phí gửi xe</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
+            <div>
+              <label style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:4px;">Đơn giá (VNĐ/giờ)</label>
+              <input type="number" id="unitPriceInp" value="5000" min="0" step="1000" style="width:150px;">
+            </div>
+            <button class="btn-blue" onclick="updatePrice()">CẬP NHẬT ĐƠN GIÁ</button>
+            <button style="background:#64748b;color:#fff;" onclick="exportBillingCSV()">XUẤT BẢNG CHI PHÍ</button>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="card" style="margin-bottom:0;">
+              <div class="kpi-title">Tổng lượt gửi đã hoàn tất</div>
+              <div class="kpi-val" id="kpiDoneCount">0</div>
+            </div>
+            <div class="card" style="margin-bottom:0;">
+              <div class="kpi-title">Số xe đang gửi</div>
+              <div class="kpi-val red" id="kpiActiveCount">0</div>
+            </div>
+            <div class="card" style="margin-bottom:0;">
+              <div class="kpi-title">Tổng tiền đã thu</div>
+              <div class="kpi-val green" id="kpiRevenue">0 VNĐ</div>
+            </div>
+          </div>
+
+          <div style="overflow-x:auto;margin-top:14px;">
+            <table>
+              <thead>
+                <tr style="background:#1e3a8a;color:#fff;">
+                  <th>STT</th><th>Biển số xe</th><th>Tầng</th><th>Vị trí</th><th>Time In</th><th>Time Out</th><th>Thời gian gửi</th><th>Đơn giá</th><th>Thành tiền</th><th>Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="billingTable"></tbody>
+            </table>
+          </div>
+          <div style="font-size:0.78rem;color:var(--muted);margin-top:10px;">
+            Đơn giá mặc định 5.000 VNĐ/giờ. Số giờ được làm tròn lên. Xe chưa ra khỏi bãi hiển thị chi phí tạm tính và chưa cộng vào tổng tiền đã thu.
+          </div>
+        </div>
+
         <div class="card" style="overflow-x:auto;">
+          <div style="font-weight:700;margin-bottom:10px;color:var(--navy)">Nhật ký vào / ra gần nhất</div>
           <table>
             <thead><tr><th>Thời gian</th><th>Hành động</th><th>Vị trí</th><th>Mã thẻ RFID</th><th>Biển số</th></tr></thead>
             <tbody id="historyTable"></tbody>
@@ -660,10 +762,38 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     function parkManual(s) { showToast('Đang đưa xe vào Vị trí '+s+'...'); fetch('/api/park_manual?slot='+s).then(r=>r.text()).then(m=>{ showToast(m); fetchStatus(); }); }
     function retrieveManual(s) { showToast('Đang lấy xe từ Vị trí '+s+'...'); fetch('/api/retrieve_manual?slot='+s).then(r=>r.text()).then(m=>{ showToast(m); fetchStatus(); }); }
     function toggleCamMode() { fetch('/api/toggle_cam').then(r=>r.text()).then(m=>{ showToast(m); fetchStatus(); }); }
-    function srv(cmd) { fetch('/api/servo?cmd='+cmd); }
+    let curSrvAng = 0;
+    function srv(cmd) { fetch('/api/servo?cmd='+cmd).then(()=>fetchStatus()); }
+    function setServoPos(which) {
+      if (which === 'ret') document.getElementById('retMs').value = curSrvAng;
+      else document.getElementById('extMs').value = curSrvAng;
+      showToast('Đã chốt góc ' + curSrvAng + '°! Bấm Lưu Flash để lưu.');
+    }
+    function srvTest(cmd) {
+      let ms = (cmd === 'extend') ? document.getElementById('extMs').value : document.getElementById('retMs').value;
+      showToast((cmd==='extend'?'Đang đẩy ra ':'Đang rút về ') + ms + 'ms...');
+      fetch('/api/servo?cmd='+cmd+'&ms='+ms).then(r=>r.text()).then(()=>showToast('Xong!'));
+    }
     function saveServo() {
       let e = document.getElementById('extMs').value, r = document.getElementById('retMs').value;
       fetch('/api/servo_save?ext='+e+'&ret='+r).then(res=>res.text()).then(m=>showToast(m));
+    }
+    let priceLoaded = false, lastBillingRows = [];
+    function fmtVnd(n) { return Number(n || 0).toLocaleString('vi-VN') + ' VNĐ'; }
+    function fmtDur(m) { m = Number(m || 0); return Math.floor(m/60) + ' giờ ' + (m%60) + ' phút'; }
+    function updatePrice() {
+      let p = document.getElementById('unitPriceInp').value;
+      fetch('/api/set_price?price='+p).then(r=>r.text()).then(m=>{ showToast(m); fetchStatus(); });
+    }
+    function exportBillingCSV() {
+      let csv = '\uFEFFSTT,Bien so xe,Tang,Vi tri,Time In,Time Out,Thoi gian gui,Don gia,Thanh tien,Trang thai\n';
+      lastBillingRows.forEach((b, i) => {
+        csv += `${i+1},"${b.plate}",${b.floor},${b.slot},"${b.timeIn}","${b.timeOut}","${fmtDur(b.durMin)}",${b.unitPrice},${b.fee},"${b.status}"\n`;
+      });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8;'}));
+      a.download = 'bang_chi_phi_gui_xe.csv';
+      a.click();
     }
 
     document.addEventListener('keydown', e => {
@@ -684,10 +814,18 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       document.getElementById('camModeTxt').innerText = d.requireCameraAI ? 'Chế độ: Tự động (RFID + Camera AI)' : 'Chế độ: RFID Nhanh (Không cần chờ Camera)';
       document.getElementById('btnCamToggle').innerText = d.requireCameraAI ? 'Đang bật: Chờ Camera AI' : 'Đang bật: Quẹt thẻ cất ngay';
 
-      if(!srvLoaded && d.servoExtendMs) {
+      if(d.servoAngle !== undefined) {
+        curSrvAng = d.servoAngle;
+        document.getElementById('srvCurAng').innerText = curSrvAng + '°';
+      }
+      if(!srvLoaded && d.servoExtendMs !== undefined) {
         document.getElementById('extMs').value = d.servoExtendMs;
         document.getElementById('retMs').value = d.servoRetractMs;
         srvLoaded = true;
+      }
+      if(!priceLoaded && d.unitPrice !== undefined) {
+        document.getElementById('unitPriceInp').value = d.unitPrice;
+        priceLoaded = true;
       }
 
       const rSw = (id, a) => document.getElementById(id).innerHTML = a ? '<span class="dot hit"></span><strong style="color:#dc2626">ĐANG CHẠM</strong>' : '<span class="dot"></span>Hở';
@@ -756,6 +894,30 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         });
       }
       document.getElementById('historyTable').innerHTML = hTbl || '<tr><td colspan="5" style="text-align:center;color:var(--muted);">Chưa có lịch sử vào/ra.</td></tr>';
+
+      // Render Bảng chi phí gửi xe
+      lastBillingRows = d.billing || [];
+      let doneCnt = lastBillingRows.filter(b => b.status === 'Đã hoàn tất').length;
+      document.getElementById('kpiDoneCount').innerText = doneCnt;
+      document.getElementById('kpiActiveCount').innerText = busy;
+      document.getElementById('kpiRevenue').innerText = fmtVnd(d.totalRevenue || 0);
+      let bTbl = '';
+      lastBillingRows.forEach((b, idx) => {
+        let isDone = b.status === 'Đã hoàn tất';
+        bTbl += `<tr>
+          <td>${idx+1}</td>
+          <td><strong>${b.plate || '--'}</strong></td>
+          <td>${b.floor}</td>
+          <td>${b.slot}</td>
+          <td>${b.timeIn || '--'}</td>
+          <td>${b.timeOut || '--'}</td>
+          <td>${fmtDur(b.durMin)}</td>
+          <td>${fmtVnd(b.unitPrice)}</td>
+          <td><strong>${fmtVnd(b.fee)}</strong></td>
+          <td><span class="badge-status ${isDone?'badge-free':'badge-busy'}">${b.status}</span></td>
+        </tr>`;
+      });
+      document.getElementById('billingTable').innerHTML = bTbl || '<tr><td colspan="10" style="text-align:center;color:var(--muted);">Chưa có dữ liệu chi phí gửi xe.</td></tr>';
     }
 
     function fetchStatus() { fetch('/api/status').then(r=>r.json()).then(updateUI).catch(()=>{}); }
@@ -778,6 +940,7 @@ void handleApiStatus() {
   json += "\"currentZ\":" + String(currentZ) + ",";
   json += "\"servoExtendMs\":" + String(servoExtendMs) + ",";
   json += "\"servoRetractMs\":" + String(servoRetractMs) + ",";
+  json += "\"servoAngle\":" + String(currentServoAngle) + ",";
   json += "\"swX\":" + String(isLimitXHomeHit() ? "true" : "false") + ",";
   json += "\"swZMin\":" + String(isLimitZMinHit() ? "true" : "false") + ",";
   json += "\"swZMax\":" + String(isLimitZMaxHit() ? "true" : "false") + ",";
@@ -804,6 +967,40 @@ void handleApiStatus() {
     json += "\"uid\":\"" + historyLog[i].uid + "\",";
     json += "\"plate\":\"" + historyLog[i].plate + "\"}";
     if (i < historyCount - 1) json += ",";
+  }
+  json += "],\"unitPrice\":" + String(unitPriceVnd) + ",";
+  json += "\"totalRevenue\":" + String(totalRevenueVnd) + ",";
+  json += "\"billing\":[";
+  bool firstB = true;
+  for (int i = 0; i < TOTAL_SLOTS; i++) {
+    if (!slots[i].occupied) continue;
+    if (!firstB) json += ",";
+    firstB = false;
+    unsigned long durSec = (slots[i].parkMs > 0) ? ((millis() - slots[i].parkMs) / 1000) : 0;
+    long estFee = calcParkingFee(durSec, unitPriceVnd);
+    String pName = slots[i].plate.length() ? slots[i].plate : slots[i].uid;
+    json += "{\"plate\":\"" + pName + "\",";
+    json += "\"floor\":" + String((i / 2) + 1) + ",";
+    json += "\"slot\":" + String(i + 1) + ",";
+    json += "\"timeIn\":\"" + slots[i].parkTime + "\",";
+    json += "\"timeOut\":\"--\",";
+    json += "\"durMin\":" + String(durSec / 60) + ",";
+    json += "\"unitPrice\":" + String(unitPriceVnd) + ",";
+    json += "\"fee\":" + String(estFee) + ",";
+    json += "\"status\":\"Đang gửi\"}";
+  }
+  for (int i = 0; i < billingCount; i++) {
+    if (!firstB) json += ",";
+    firstB = false;
+    json += "{\"plate\":\"" + billingLog[i].plate + "\",";
+    json += "\"floor\":" + String(billingLog[i].floor) + ",";
+    json += "\"slot\":" + String(billingLog[i].slot) + ",";
+    json += "\"timeIn\":\"" + billingLog[i].timeIn + "\",";
+    json += "\"timeOut\":\"" + billingLog[i].timeOut + "\",";
+    json += "\"durMin\":" + String(billingLog[i].durationMin) + ",";
+    json += "\"unitPrice\":" + String(billingLog[i].unitPrice) + ",";
+    json += "\"fee\":" + String(billingLog[i].fee) + ",";
+    json += "\"status\":\"Đã hoàn tất\"}";
   }
   json += "]}";
   server.send(200, "application/json", json);
@@ -906,11 +1103,11 @@ void handleApiZero() {
 
 void handleApiServo() {
   String cmd = server.arg("cmd");
-  if (cmd == "extend")         servoExtend();
-  else if (cmd == "retract")   servoRetract();
-  else if (cmd == "nudge_ext") servoRunTime(SERVO_PWM_EXTEND, 100);
-  else if (cmd == "nudge_ret") servoRunTime(SERVO_PWM_RETRACT, 100);
-  else servoStop();
+  int ang = server.hasArg("ms") ? constrain(server.arg("ms").toInt(), 0, 180) : -1;
+  if (cmd == "extend")         writeServoAngle(ang >= 0 ? ang : (int)servoExtendMs);
+  else if (cmd == "retract")   writeServoAngle(ang >= 0 ? ang : (int)servoRetractMs);
+  else if (cmd == "nudge_ext") writeServoAngle(currentServoAngle + 10);
+  else if (cmd == "nudge_ret") writeServoAngle(currentServoAngle - 10);
   server.send(200, "text/plain", "SERVO_OK");
 }
 
@@ -921,6 +1118,20 @@ void handleApiServoSave() {
     return;
   }
   server.send(400, "text/plain", "MISSING_PARAMS");
+}
+
+void handleApiSetPrice() {
+  if (server.hasArg("price")) {
+    long p = server.arg("price").toInt();
+    if (p < 0) p = 0;
+    unitPriceVnd = p;
+    prefs.begin("baidoxe", false);
+    prefs.putLong("price", unitPriceVnd);
+    prefs.end();
+    server.send(200, "text/plain", "Da cap nhat don gia: " + String(unitPriceVnd) + " VND/gio");
+    return;
+  }
+  server.send(400, "text/plain", "MISSING_PRICE");
 }
 
 // --------------------------- 9. GIAO TIEP SERIAL MONITOR --------------------------------------
@@ -940,8 +1151,8 @@ void handleSerialCommands() {
       case 'a': jogX(-200); break; case 'A': jogX(-1000); break;
       case 'h': homeAxes(); break;
       case 'e': servoExtend(); break; case 'r': servoRetract(); break;
-      case 'q': servoRunTime(SERVO_PWM_EXTEND, 100); break;
-      case 'z': servoRunTime(SERVO_PWM_RETRACT, 100); break;
+      case 'q': writeServoAngle(currentServoAngle + 10); break;
+      case 'z': writeServoAngle(currentServoAngle - 10); break;
       case '1': case '2': case '3': case '4': case '5': case '6':
         saveSlotCoordinateToNVS(c - '1', currentX, currentZ); break;
       case 'p':
@@ -955,6 +1166,7 @@ void handleSerialCommands() {
 
 // --------------------------- 10. SETUP & LOOP -------------------------------------------------
 void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Chong reset khi Servo keo dong dinh
   Serial.begin(115200);
   Wire.begin(21, 22);
 
@@ -969,9 +1181,15 @@ void setup() {
   pinMode(PIN_LED_STATUS, OUTPUT); digitalWrite(PIN_LED_STATUS, LOW);
 
   buzzerOff(); pinMode(PIN_BUZZER, OUTPUT); buzzerOff();
+  beep(2, 80);
 
-  trayServo.attach(PIN_SERVO_PWM);
-  servoStop();
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(PIN_SERVO_PWM, SERVO_FREQ, SERVO_RES);
+#else
+  ledcSetup(4, SERVO_FREQ, SERVO_RES);
+  ledcAttachPin(PIN_SERVO_PWM, 4);
+#endif
+  writeServoAngle((int)servoRetractMs);
 
   lcd.init(); lcd.backlight();
   lcd.setCursor(0, 0); lcd.print("BAI DO XE 6 O");
@@ -1016,6 +1234,7 @@ void setup() {
   server.on("/api/zero", HTTP_GET, handleApiZero);
   server.on("/api/servo", HTTP_GET, handleApiServo);
   server.on("/api/servo_save", HTTP_GET, handleApiServoSave);
+  server.on("/api/set_price", HTTP_GET, handleApiSetPrice);
   server.begin();
 
   lcd.clear();
@@ -1027,6 +1246,26 @@ void setup() {
 void loop() {
   if (isLimitXHomeHit()) currentX = 0;
   if (isLimitZMinHit())  currentZ = 0;
+
+  // Cam bien lua LM393 (GPIO 35): LOW = Co lua -> Bao coi khan cap
+  static bool fireAlarmActive = false;
+  if (digitalRead(PIN_IR_GATE) == LOW) {
+    if (!fireAlarmActive) {
+      fireAlarmActive = true;
+      systemStatusText = "CANH BAO CHAY! Phat hien lua!";
+      lcd.clear();
+      lcd.setCursor(0, 0); lcd.print("CANH BAO CHAY!");
+      lcd.setCursor(0, 1); lcd.print("PHAT HIEN LUA!");
+    }
+    if ((millis() / 200) % 2 == 0) buzzerOn(); else buzzerOff();
+  } else if (fireAlarmActive) {
+    fireAlarmActive = false;
+    buzzerOff();
+    systemStatusText = "San sang! Quet the RFID de gui/lay xe";
+    lcd.clear();
+    lcd.setCursor(0, 0); lcd.print("SAN SANG! QUET");
+    lcd.setCursor(0, 1); lcd.print("THE RFID DE GUI");
+  }
 
   server.handleClient();
   handleSerialCommands();
